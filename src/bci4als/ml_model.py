@@ -1,17 +1,17 @@
-import os
-import pickle
 from typing import List
 import mne
 import pandas as pd
-from bci4als.eeg import EEG
+from src.bci4als.eeg import EEG
 import numpy as np
-from matplotlib.figure import Figure
 from mne.channels import make_standard_montage
 from mne.decoding import CSP
 from nptyping import NDArray
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
 
+import sys
+sys.path.append('../../../Drone_Project/')
+from droneCtrl import Commands
 
 class MLModel:
     """
@@ -31,6 +31,7 @@ class MLModel:
         self.labels: List[int] = labels
         self.debug = True
         self.clf = None
+        self.nonEEGchannels = ['X1','X2','X3','TRG','CM']
 
     def offline_training(self, eeg: EEG, model_type: str = 'csp_lda'):
 
@@ -58,6 +59,7 @@ class MLModel:
 
         # set montage
         montage = make_standard_montage('standard_1020')
+        epochs.drop_channels(self.nonEEGchannels)
         epochs.set_montage(montage)
 
         # Apply band-pass filter
@@ -77,13 +79,28 @@ class MLModel:
         # Prepare the data to MNE functions
         data = data.astype(np.float64)
 
+        montage = eeg.get_board_names()
+        data = np.delete(data, np.where(np.isin(montage, self.nonEEGchannels)), 0)
+
         # Filter the data ( band-pass only)
         data = mne.filter.filter_data(data, l_freq=8, h_freq=30, sfreq=eeg.sfreq, verbose=False)
 
         # Predict
-        prediction = self.clf.predict(data[np.newaxis])[0]
+        pred = self.clf.predict(data[np.newaxis])[0]
+        pred_prob = self.clf.predict_proba(data[np.newaxis])[0]
 
-        return prediction
+        ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
+        if pred == 0:
+            com_pred = Commands.right
+        elif pred == 1:
+            com_pred = Commands.left
+        elif pred == 3:
+            com_pred = Commands.forward
+        elif pred == 4:
+            com_pred = Commands.back
+        else:
+            com_pred = Commands.idle
+        return com_pred, pred_prob.max()
 
     def partial_fit(self, eeg, X: NDArray, y: int):
 

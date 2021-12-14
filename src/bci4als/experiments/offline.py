@@ -1,16 +1,12 @@
-import datetime
 import os
 import pickle
-import random
 import sys
 import time
 from tkinter import messagebox
-from tkinter.filedialog import askdirectory
 from typing import Dict, List, Any
-import numpy as np
 import pandas as pd
 from .experiment import Experiment
-from bci4als.eeg import EEG
+from src.bci4als.eeg import EEG
 from playsound import playsound
 from psychopy import visual
 
@@ -46,6 +42,8 @@ class OfflineExperiment(Experiment):
                                            for label in self.enum_image.values()}
         self.audio_success_path = os.path.join(os.path.dirname(__file__), 'audio', f'success.mp3')
         self.visual_params: Dict[str, Any] = {'text_color': 'white', 'text_height': 48}
+
+        self.signalArray = None
 
     def _init_window(self):
         """
@@ -138,13 +136,15 @@ class OfflineExperiment(Experiment):
             playsound(audio_path.format('start'))
 
         # Draw and push marker
-        self.eeg.insert_marker(status='start', label=self.labels[trial_index], index=trial_index)
+        # self.eeg.insert_marker(status='start', label=self.labels[trial_index], index=trial_index)
         self.window_params[trial_img].draw()
         win.flip()
 
-        # Wait
-        time.sleep(self.trial_length)
-        self.eeg.insert_marker(status='stop', label=self.labels[trial_index], index=trial_index)
+        self.signalArray = None
+        while self.signalArray is None:  # epoch samples are not ready yet
+            time.sleep(self.trial_length / 2) # Wait
+            self.signalArray = self.eeg.get_board_data()
+        # self.eeg.insert_marker(status='stop', label=self.labels[trial_index], index=trial_index)
 
         # Play end sound
         if self.audio:
@@ -164,7 +164,7 @@ class OfflineExperiment(Experiment):
         # Wait for a sec to the OpenBCI to get the last marker
         time.sleep(0.5)
 
-        # Extract the data
+        # Extract all the recorded data of the whole experiment
         trials = []
         data = self.eeg.get_board_data()
         ch_names = self.eeg.get_board_names()
@@ -202,6 +202,11 @@ class OfflineExperiment(Experiment):
         self.subject_directory = self._ask_subject_directory()
         self.session_directory = self.create_session_folder(self.subject_directory)
 
+        # Start stream
+        # initialize headset
+        print("Turning EEG connection ON")
+        self.eeg.on()
+
         # Create experiment's metadata
         self.write_metadata()
 
@@ -215,13 +220,11 @@ class OfflineExperiment(Experiment):
         # # Init label vector
         # self._init_labels()
 
-        # Start stream
-        # initialize headset
-        print("Turning EEG connection ON")
-        self.eeg.on()
-
         print(f"Running {self.num_trials} trials")
+
         # Run trials
+        ch_names = self.eeg.get_board_names()
+        trials = []
         for i in range(self.num_trials):
             # Messages for user
             self._user_messages(i)
@@ -229,8 +232,13 @@ class OfflineExperiment(Experiment):
             # Show stim on window
             self._show_stimulus(i)
 
-        # Export and return the data
-        trials = self._extract_trials()
+            #save new signalArray
+            trials.append(pd.DataFrame(data=self.signalArray.T, columns=ch_names))
+
+        # # Export and return the data
+        # trials = self._extract_trials()
+
+        self.window_params['main_window'].close()
 
         print("Turning EEG connection OFF")
         self.eeg.off()
