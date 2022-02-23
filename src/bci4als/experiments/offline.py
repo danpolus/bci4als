@@ -9,6 +9,8 @@ from .experiment import Experiment
 from src.bci4als.eeg import EEG
 from playsound import playsound
 from psychopy import visual
+from scipy.io import savemat
+import numpy as np
 
 
 class OfflineExperiment(Experiment):
@@ -141,6 +143,7 @@ class OfflineExperiment(Experiment):
         win.flip()
 
         self.signalArray = None
+        time.sleep(self.trial_length / 2)  # Wait
         while self.signalArray is None:  # epoch samples are not ready yet
             time.sleep(self.trial_length / 2) # Wait
             self.signalArray = self.eeg.get_board_data()
@@ -196,6 +199,10 @@ class OfflineExperiment(Experiment):
         labels_path = os.path.join(self.session_directory, 'labels.csv')
         print(f"Saving labels to {labels_path}")
         pd.DataFrame.from_dict({'name': self.labels}).to_csv(labels_path, index=False, header=False)
+
+        trials_mat = np.stack(trials)
+        train_data = {'trials':trials_mat, 'labels':self.labels}
+        savemat(os.path.join(self.session_directory, 'train_data.mat'), train_data)
 
     def run(self):
         # Init the current experiment folder

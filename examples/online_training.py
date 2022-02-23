@@ -1,6 +1,5 @@
 import pickle
 
-from bci4als.ml_model import MLModel
 from bci4als.experiments.online import OnlineExperiment
 from bci4als.eeg import EEG
 
@@ -14,7 +13,7 @@ def run_experiment(model_path: str):
     eeg = EEG(board_id=CYTON_DAISY)
 
     exp = OnlineExperiment(eeg=eeg, model=model, num_trials=10, buffer_time=4, threshold=3, skip_after=8,
-                           co_learning=True, debug=False)
+                           co_learning=True, debug=False) # co_learning=False:   predict w/wo training
 
     exp.run(use_eeg=True, full_screen=True)
 

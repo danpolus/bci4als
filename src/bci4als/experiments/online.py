@@ -1,21 +1,17 @@
 import json
 import os
 import pickle
-import random
 import sys
 import threading
 import time
 from typing import Dict, Union
-import matplotlib
-import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import playsound
-from bci4als.eeg import EEG
+from src.bci4als.eeg import EEG
 from .experiment import Experiment
-from bci4als.experiments.feedback import Feedback
-from bci4als.ml_model import MLModel
-from matplotlib.animation import FuncAnimation
+from src.bci4als.experiments.feedback import Feedback
+from src.bci4als.ml_model import MLModel
 from mne_features.feature_extraction import extract_features
 from nptyping import NDArray
 from psychopy import visual, core

@@ -4,7 +4,7 @@ from src.bci4als.experiments.offline import OfflineExperiment
 
 def offline_experiment(eeg):
 
-    exp = OfflineExperiment(eeg=eeg, num_trials=20, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
+    exp = OfflineExperiment(eeg=eeg, num_trials=50, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
     trials, labels = exp.run()
 
     # Classification

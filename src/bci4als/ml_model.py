@@ -8,6 +8,10 @@ from mne.decoding import CSP
 from nptyping import NDArray
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+import matplotlib.pyplot as plt
+from sklearn import clone
 
 import sys
 sys.path.append('../../../Drone_Project/')
@@ -32,6 +36,8 @@ class MLModel:
         self.debug = True
         self.clf = None
         self.nonEEGchannels = ['X1','X2','X3','TRG','CM']
+        self.filt_l_freq = 7
+        self.filt_h_freq = 30
 
     def offline_training(self, eeg: EEG, model_type: str = 'csp_lda'):
 
@@ -63,7 +69,7 @@ class MLModel:
         epochs.set_montage(montage)
 
         # Apply band-pass filter
-        epochs.filter(7., 30., fir_design='firwin', skip_by_annotation='edge', verbose=False)
+        epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False)
 
         # Assemble a classifier
         lda = LinearDiscriminantAnalysis()
@@ -71,6 +77,22 @@ class MLModel:
 
         # Use scikit-learn Pipeline
         self.clf = Pipeline([('CSP', csp), ('LDA', lda)])
+
+        clf_train = clone(self.clf)
+        X_train, X_test, y_train, y_test = train_test_split(epochs.get_data(), self.labels, test_size=0.3)  # random_state=0
+        clf_train.fit(X_train, y_train)
+        pred_train = clf_train.predict(X_train)
+        pred_test = clf_train.predict(X_test)
+        print('train accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_train, pred_train)))
+        print('test accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_test, pred_test)))
+        cm_train = metrics.confusion_matrix(y_train, pred_train)
+        cm_test = metrics.confusion_matrix(y_test, pred_test)
+        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+        disp.plot()
+        plt.show()
+        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_test, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+        disp.plot()
+        plt.show()
 
         # fit transformer and classifier to data
         self.clf.fit(epochs.get_data(), self.labels)
@@ -83,7 +105,7 @@ class MLModel:
         data = np.delete(data, np.where(np.isin(montage, self.nonEEGchannels)), 0)
 
         # Filter the data ( band-pass only)
-        data = mne.filter.filter_data(data, l_freq=8, h_freq=30, sfreq=eeg.sfreq, verbose=False)
+        data = mne.filter.filter_data(data, l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, sfreq=eeg.sfreq, pad='edge', verbose=False)
 
         # Predict
         pred = self.clf.predict(data[np.newaxis])[0]
@@ -95,11 +117,11 @@ class MLModel:
         elif pred == 1:
             com_pred = Commands.left
         elif pred == 3:
-            com_pred = Commands.forward
+            com_pred = Commands.forward #tongue
         elif pred == 4:
-            com_pred = Commands.back
+            com_pred = Commands.back #legs
         else:
-            com_pred = Commands.idle
+            com_pred = Commands.idle #pred==2
         return com_pred, pred_prob.max()
 
     def partial_fit(self, eeg, X: NDArray, y: int):
