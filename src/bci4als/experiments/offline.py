@@ -2,14 +2,14 @@ import os
 import pickle
 import sys
 import time
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from typing import Dict, List, Any
 import pandas as pd
 from .experiment import Experiment
 from src.bci4als.eeg import EEG
 from playsound import playsound
 from psychopy import visual
-from scipy.io import savemat
+from scipy.io import savemat, loadmat
 import numpy as np
 
 
@@ -203,6 +203,25 @@ class OfflineExperiment(Experiment):
         trials_mat = np.stack(trials)
         train_data = {'trials':trials_mat, 'labels':self.labels}
         savemat(os.path.join(self.session_directory, 'train_data.mat'), train_data)
+
+    def load_recorded_trials(self):
+
+        # tr = pickle.load(open("C:\\My Files\\Work\\BGU\\Datasets\\drone BCI\\18\\trials.pickle", 'rb'))
+        # ch_names = tr[0].columns
+
+        trials_mat_fp = filedialog.askopenfilename(title='Select trials file', initialdir="C:\My Files\Work\BGU\Datasets\drone BCI", filetypes=[("mat files", "*.mat")])
+        recorded_trials = loadmat(trials_mat_fp)
+
+        trials = []
+        ch_names = self.eeg.get_board_names()
+        for iTrl in range(recorded_trials['train_data_trials'].shape[0]):
+            trials.append(pd.DataFrame(recorded_trials['train_data_trials'][iTrl,:,:], columns=ch_names))
+        for iTrl in range(recorded_trials['augmented_data_trials'].shape[0]):
+            trials.append(pd.DataFrame(recorded_trials['augmented_data_trials'][iTrl,:,:], columns=ch_names))
+
+        labels = np.append(recorded_trials['train_data_labels'], recorded_trials['augmented_data_labels']).tolist()
+
+        return trials, labels
 
     def run(self):
         # Init the current experiment folder
