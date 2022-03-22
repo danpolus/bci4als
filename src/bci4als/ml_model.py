@@ -8,7 +8,6 @@ from mne.decoding import CSP
 from nptyping import NDArray
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import train_test_split
 from sklearn import metrics
 import matplotlib.pyplot as plt
 from sklearn import clone
@@ -29,13 +28,15 @@ class MLModel:
         a formatted string to print out what the animal says
     """
 
-    def __init__(self, trials: List[pd.DataFrame], labels: List[int]):
+    def __init__(self, trials: List[pd.DataFrame], labels: List[int], augmented_trials: List[pd.DataFrame], augmented_labels: List[int]):
 
         self.trials: List[NDArray] = [t.to_numpy().T for t in trials]
         self.labels: List[int] = labels
+        self.augmented_trials: List[NDArray] = [t.to_numpy().T for t in augmented_trials]
+        self.augmented_labels: List[int] = augmented_labels
         self.debug = True
         self.clf = None
-        self.nonEEGchannels = ['X1','X2','X3','TRG','CM']
+        self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
         self.filt_l_freq = 7
         self.filt_h_freq = 30
 
@@ -57,8 +58,7 @@ class MLModel:
         ch_names = eeg.get_board_names()
         ch_types = ['eeg'] * len(ch_names)
         sfreq: int = eeg.sfreq
-        n_samples: int = min([t.shape[1] for t in self.trials])
-        epochs_array: np.ndarray = np.stack([t[:, :n_samples] for t in self.trials])
+        epochs_array: np.ndarray = np.stack(self.trials + self.augmented_trials)
 
         info = mne.create_info(ch_names, sfreq, ch_types)
         epochs = mne.EpochsArray(epochs_array, info)
@@ -78,24 +78,11 @@ class MLModel:
         # Use scikit-learn Pipeline
         self.clf = Pipeline([('CSP', csp), ('LDA', lda)])
 
-        clf_train = clone(self.clf)
-        X_train, X_test, y_train, y_test = train_test_split(epochs.get_data(), self.labels, test_size=0.3)  # random_state=0
-        clf_train.fit(X_train, y_train)
-        pred_train = clf_train.predict(X_train)
-        pred_test = clf_train.predict(X_test)
-        print('train accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_train, pred_train)))
-        print('test accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_test, pred_test)))
-        cm_train = metrics.confusion_matrix(y_train, pred_train)
-        cm_test = metrics.confusion_matrix(y_test, pred_test)
-        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train, display_labels=['right', 'left', 'idle','tongue', 'legs'])
-        disp.plot()
-        plt.show()
-        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_test, display_labels=['right', 'left', 'idle','tongue', 'legs'])
-        disp.plot()
-        plt.show()
+        #cross validation
+        self.cross_valid(epochs)
 
         # fit transformer and classifier to data
-        self.clf.fit(epochs.get_data(), self.labels)
+        self.clf.fit(epochs.get_data(), self.labels + self.augmented_labels)
 
     def online_predict(self, data: NDArray, eeg: EEG):
         # Prepare the data to MNE functions
@@ -124,14 +111,48 @@ class MLModel:
             com_pred = Commands.idle #pred==2
         return com_pred, pred_prob.max()
 
-    def partial_fit(self, eeg, X: NDArray, y: int):
+    def cross_valid(self, epochs):
 
-        # Append X to trials
-        self.trials.append(X)
+        nFold = 5
+        nTrials = len(self.labels)
+        foldSize = int(np.ceil(nTrials/nFold))
 
-        # Append y to labels
-        self.labels.append(y)
+        all_trials = epochs.get_data()
+        all_labels = np.array(self.labels+self.augmented_labels)
 
-        # Fit with trials and labels
-        self._csp_lda(eeg)
+        trials_inx = np.arange(nTrials)
+        augmented_trials_inx = np.arange(len(self.augmented_labels))+nTrials
+        np.random.shuffle(trials_inx)
 
+        y_train_join = np.array([])
+        y_val_join = np.array([])
+        pred_val_join = np.array([])
+        pred_train_join = np.array([])
+        for iFold in range(nFold):
+            validation_inx = trials_inx[range(foldSize*iFold, min(foldSize*(iFold+1), nTrials))]
+            train_inx = np.append(np.setdiff1d(trials_inx, validation_inx, assume_unique=True), augmented_trials_inx)
+            X_train = all_trials[train_inx,:,:]
+            X_val = all_trials[validation_inx,:,:]
+            y_train = all_labels[train_inx]
+            y_val = all_labels[validation_inx]
+
+            clf_val = clone(self.clf)
+            clf_val.fit(X_train, y_train)
+            pred_train = clf_val.predict(X_train)
+            pred_val = clf_val.predict(X_val)
+
+            y_train_join = np.append(y_train_join,y_train)
+            y_val_join = np.append(y_val_join,y_val)
+            pred_train_join = np.append(pred_train_join,pred_train)
+            pred_val_join = np.append(pred_val_join,pred_val)
+
+        print('train accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_train_join, pred_train_join)))
+        print('validation accuracy score: {0:0.4f}'.format(metrics.accuracy_score(y_val_join, pred_val_join)))
+        cm_train = metrics.confusion_matrix(y_train_join, pred_train_join)
+        cm_val = metrics.confusion_matrix(y_val_join, pred_val_join)
+        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+        disp.plot()
+        plt.show()
+        disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_val, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+        disp.plot()
+        plt.show()

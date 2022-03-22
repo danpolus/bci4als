@@ -1,6 +1,7 @@
 
 from typing import List
 from nptyping import NDArray
+import time
 
 class EEG:
 
@@ -11,15 +12,15 @@ class EEG:
 
         # Other Params
         self.sfreq = -1
+        self.chan_names = []
 
     def get_board_data(self) -> NDArray:
         """The method returns the data from board and remove it"""
-        self.sfreq = self.DSIparser.fsample
         return self.DSIparser.get_epoch(self.epoch_len_sec)
 
     def get_board_names(self) -> List[str]:
         """The method returns the board's channels"""
-        return self.DSIparser.montage
+        return self.chan_names
 
     def get_board_channels(self):
         """Get list with the channels locations as list of int"""
@@ -38,6 +39,11 @@ class EEG:
 
     def on(self):
         self.DSIparser.start()
+        time.sleep(0.2) #wait the thread to start
+        self.sfreq = self.DSIparser.fsample
+        self.chan_names = self.DSIparser.montage
+        # self.sfreq = 300 #uncomment this when working offline
+        # self.chan_names = ['P3','C3', 'F3', 'Fz', 'F4', 'C4', 'P4', 'Cz','CM', 'A1', 'Fp1', 'Fp2' , 'T3', 'T5', 'O1', 'O2', 'X3' , 'X2', 'F7', 'F8', 'X1', 'A2', 'T6', 'T4', 'TRG']
 
     def off(self):
         self.DSIparser.stop()

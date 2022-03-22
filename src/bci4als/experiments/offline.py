@@ -212,16 +212,21 @@ class OfflineExperiment(Experiment):
         trials_mat_fp = filedialog.askopenfilename(title='Select trials file', initialdir="C:\My Files\Work\BGU\Datasets\drone BCI", filetypes=[("mat files", "*.mat")])
         recorded_trials = loadmat(trials_mat_fp)
 
-        trials = []
+        self.eeg.on() #get cap eeg settings
+        self.eeg.off()
         ch_names = self.eeg.get_board_names()
+
+        trials = []
+        augmented_trials = []
         for iTrl in range(recorded_trials['train_data_trials'].shape[0]):
             trials.append(pd.DataFrame(recorded_trials['train_data_trials'][iTrl,:,:], columns=ch_names))
         for iTrl in range(recorded_trials['augmented_data_trials'].shape[0]):
-            trials.append(pd.DataFrame(recorded_trials['augmented_data_trials'][iTrl,:,:], columns=ch_names))
+            augmented_trials.append(pd.DataFrame(recorded_trials['augmented_data_trials'][iTrl,:,:], columns=ch_names))
 
-        labels = np.append(recorded_trials['train_data_labels'], recorded_trials['augmented_data_labels']).tolist()
+        labels = recorded_trials['train_data_labels'][0].tolist()
+        augmented_labels = recorded_trials['augmented_data_labels'][0].tolist()
 
-        return trials, labels
+        return trials, labels, augmented_trials, augmented_labels
 
     def run(self):
         # Init the current experiment folder
