@@ -9,6 +9,8 @@ def offline_experiment(eeg, load_recorded_trials_flg):
         trials, labels, augmented_trials, augmented_labels = exp.load_recorded_trials()
         # augmented_trials = [] #don't use augmentation
         # augmented_labels = []
+        # trials = [] #don't use original trials
+        # labels = []
     else:
         trials, labels = exp.run()
         augmented_trials = []

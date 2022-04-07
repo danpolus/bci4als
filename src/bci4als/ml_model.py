@@ -10,6 +10,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
 from sklearn import metrics
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from sklearn import clone
 
 import sys
@@ -39,6 +40,8 @@ class MLModel:
         self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
         self.filt_l_freq = 7
         self.filt_h_freq = 30
+
+        mpl.use('TkAgg')
 
     def offline_training(self, eeg: EEG, model_type: str = 'csp_lda'):
 
@@ -84,6 +87,9 @@ class MLModel:
         # fit transformer and classifier to data
         self.clf.fit(epochs.get_data(), self.labels + self.augmented_labels)
 
+        csp.plot_patterns(epochs.info, ch_type='eeg', units='Patterns (AU)', size=1.5)
+        # self.clf.named_steps['CSP'].plot_patterns(epochs.info, ch_type='eeg', units='Patterns (AU)', size=1.5)
+
     def online_predict(self, data: NDArray, eeg: EEG):
         # Prepare the data to MNE functions
         data = data.astype(np.float64)
@@ -112,6 +118,8 @@ class MLModel:
         return com_pred, pred_prob.max()
 
     def cross_valid(self, epochs):
+
+        mpl.use('TkAgg')
 
         nFold = 5
         nTrials = len(self.labels)
@@ -152,7 +160,7 @@ class MLModel:
         cm_val = metrics.confusion_matrix(y_val_join, pred_val_join)
         disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train, display_labels=['right', 'left', 'idle','tongue', 'legs'])
         disp.plot()
-        plt.show()
+        plt.show(block=False)
         disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_val, display_labels=['right', 'left', 'idle','tongue', 'legs'])
         disp.plot()
-        plt.show()
+        plt.show(block=False)

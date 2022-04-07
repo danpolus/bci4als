@@ -42,8 +42,14 @@ class EEG:
         time.sleep(0.2) #wait the thread to start
         self.sfreq = self.DSIparser.fsample
         self.chan_names = self.DSIparser.montage
-        # self.sfreq = 300 #uncomment this when working offline
-        # self.chan_names = ['P3','C3', 'F3', 'Fz', 'F4', 'C4', 'P4', 'Cz','CM', 'A1', 'Fp1', 'Fp2' , 'T3', 'T5', 'O1', 'O2', 'X3' , 'X2', 'F7', 'F8', 'X1', 'A2', 'T6', 'T4', 'TRG']
 
     def off(self):
         self.DSIparser.stop()
+
+    # #when running offline, use this version
+    # def on(self):
+    #     self.sfreq = 300
+    #     self.chan_names = ['P3','C3', 'F3', 'Fz', 'F4', 'C4', 'P4', 'Cz','CM', 'A1', 'Fp1', 'Fp2' , 'T3', 'T5', 'O1', 'O2', 'X3' , 'X2', 'F7', 'F8', 'X1', 'A2', 'T6', 'T4', 'TRG']
+    #
+    # def off(self):
+    #     return
