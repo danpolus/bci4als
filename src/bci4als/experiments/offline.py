@@ -45,6 +45,9 @@ class OfflineExperiment(Experiment):
         self.audio_success_path = os.path.join(os.path.dirname(__file__), 'audio', f'success.mp3')
         self.visual_params: Dict[str, Any] = {'text_color': 'white', 'text_height': 48}
 
+        self.label_keys = (0, 1, 2) #MI labels fpr training
+        self._init_labels(keys=self.label_keys)
+
         self.signalArray = None
 
     def _init_window(self):
@@ -65,20 +68,6 @@ class OfflineExperiment(Experiment):
 
         self.window_params = {'main_window': main_window, 'right': right_stim, 'left': left_stim,
                               'idle': idle_stim, 'tongue': tongue_stim, 'legs': legs_stim}
-    #
-    # def _init_labels(self):
-    #     """
-    #     This method creates dict containing a stimulus vector
-    #     :return: the stimulus in each trial (list)
-    #     """
-    #
-    #     # Create the balance label vector
-    #     for i in self.enum_image.keys():
-    #         self.labels += [i] * (self.num_trials // len(self.enum_image.keys()))
-    #     self.labels += list(np.random.choice(list(self.enum_image.keys()),
-    #                                          size=self.num_trials % len(self.enum_image.keys()),
-    #                                          replace=True))
-    #     random.shuffle(self.labels)
 
     def _user_messages(self, trial_index):
         """
@@ -206,8 +195,9 @@ class OfflineExperiment(Experiment):
 
     def load_recorded_trials(self):
 
-        # tr = pickle.load(open("C:\\My Files\\Work\\BGU\\Datasets\\drone BCI\\18\\trials.pickle", 'rb'))
+        # tr = pickle.load(open("C:\\My Files\\Work\\BGU\\Datasets\\drone BCI\\1 Daniel50\\trials.pickle", 'rb'))
         # ch_names = tr[0].columns
+        # recorded_trials = loadmat('C:/My Files/Work/BGU/Datasets/drone BCI/1 Daniel50/augmented_train_data_3cond.mat')
 
         trials_mat_fp = filedialog.askopenfilename(title='Select trials file', initialdir="C:\My Files\Work\BGU\Datasets\drone BCI", filetypes=[("mat files", "*.mat")])
         recorded_trials = loadmat(trials_mat_fp)
@@ -245,11 +235,6 @@ class OfflineExperiment(Experiment):
 
         # Init psychopy and screen params
         self._init_window()
-
-
-        # This moved to the base class
-        # # Init label vector
-        # self._init_labels()
 
         print(f"Running {self.num_trials} trials")
 

@@ -68,8 +68,40 @@ class MLModel:
         epochs.drop_channels(self.nonEEGchannels)
         epochs.set_montage(montage)
 
+###############################################################################################################
+
+
+        # from mne.time_frequency import tfr_morlet
+        # from mne import viz
+        # from mne_features import feature_extraction
+        # # plt.figure()
+        # # axis = plt.axes()
+        # fig = epochs.plot_psd(xscale='log', n_jobs=1, average=False)
+        # # fig.show()
+        # # plt.show(block=False)
+        # freqs = np.logspace(*np.log10([1, 40]), num=20)
+        # power, itc = tfr_morlet(epochs, freqs=freqs, n_cycles=freqs/2, use_fft=True, return_itc=True, n_jobs=1)
+        # power.plot_topo(dB=True, title='Average power')
+        # itc.plot_topo(title='Inter-Trial coherence', vmin=0., vmax=1., cmap='Reds')
+        # other_featurs = feature_extraction.extract_features(epochs.get_data(), sfreq, ['std','samp_entropy'])
+        # other_featurs = np.reshape(np.mean(other_featurs, axis=0),[2,18])
+        # _, axis = plt.subplots(1, 4, figsize=(7, 4))
+        # viz.plot_topomap(other_featurs[0,:], epochs.info, vmin=np.min(other_featurs[0,:]), vmax=np.max(other_featurs[0,:]), names = epochs.info.ch_names, show_names=True, cmap='Purples', axes=axis[0]) #std
+        # axis[0].set_title('std')
+        # clim = {'kind': 'value', 'lims': (np.min(other_featurs[0,:]), (np.min(other_featurs[0,:])+np.max(other_featurs[0,:]))/2, np.max(other_featurs[0,:]))}
+        # viz.plot_brain_colorbar(axis[1], clim=clim, colormap='Purples')
+        # viz.plot_topomap(other_featurs[1,:], epochs.info, vmin=np.min(other_featurs[1,:]), vmax=np.max(other_featurs[1,:]), names = epochs.info.ch_names, show_names=True, cmap='Purples', axes=axis[2]) #samp_entropy
+        # axis[2].set_title('samp_entropy')
+        # clim = {'kind': 'value','lims': (np.min(other_featurs[1,:]), (np.min(other_featurs[1,:])+np.max(other_featurs[1,:]))/2, np.max(other_featurs[1,:]))}
+        # viz.plot_brain_colorbar(axis[3], clim=clim, colormap='Purples')
+        # plt.show(block=False)
+        # #https://mne.tools/stable/auto_tutorials/time-freq/20_sensors_time_frequency.html
+
+
+        #preprocessing
         # Apply band-pass filter
         epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False)
+
 
         #CSP + LDA classifier
         from mne.decoding import CSP
@@ -79,6 +111,7 @@ class MLModel:
         csp = CSP(n_components=6, reg=None, log=True, norm_trace=False)
         self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
         trials_data = epochs.get_data()
+
 
         # #many features + SVM classifier
         # from sklearn.svm import SVC
@@ -116,10 +149,14 @@ class MLModel:
         # plt.show(block=False)
         # #svm descision boundary visualization: https://scikit-learn.org/0.18/auto_examples/svm/plot_iris.html
 
+
         # #raw eeg + multi-layer perceptron
         # from sklearn.neural_network import MLPClassifier
         # self.clf = MLPClassifier(hidden_layer_sizes=(int(epochs.times.shape[0]/4), int(epochs.times.shape[0]/8), 40, 40, 20), verbose=True)
         # trials_data = epochs.get_data().reshape((len(epochs),-1))
+
+
+###############################################################################################################
 
         #cross validation
         # from sklearn.model_selection import cross_validate, KFold
@@ -205,10 +242,10 @@ class MLModel:
         if plot_flg:
             cm_train = metrics.confusion_matrix(y_train_join, pred_train_join)
             cm_val = metrics.confusion_matrix(y_val_join, pred_val_join)
-            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_train)#, display_labels=['right', 'left', 'idle','tongue', 'legs'])
             disp.plot()
             plt.show(block=False)
-            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_val, display_labels=['right', 'left', 'idle','tongue', 'legs'])
+            disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_val)#, display_labels=['right', 'left', 'idle','tongue', 'legs'])
             disp.plot()
             plt.show(block=False)
 

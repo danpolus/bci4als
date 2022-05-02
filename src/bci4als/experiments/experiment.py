@@ -145,6 +145,7 @@ class Experiment:
 
         # keys = [3, 4] #todo: make the list of keys programmable from main scope (run experiment with limited keys)
         # Create the balance label vector
+        self.labels = []
         for i in keys:
             self.labels += [i] * (self.num_trials // len(keys))
         self.labels += list(np.random.choice(list(keys),
