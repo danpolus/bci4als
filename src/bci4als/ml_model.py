@@ -4,11 +4,15 @@ import pandas as pd
 from src.bci4als.eeg import EEG
 import numpy as np
 from mne.channels import make_standard_montage
+from mne_features.feature_extraction import extract_features
 from nptyping import NDArray
 from sklearn import metrics
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from sklearn import clone
+from mne.decoding import CSP
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.pipeline import Pipeline
 
 import sys
 sys.path.append('../../../Drone_Project/')
@@ -70,7 +74,17 @@ class MLModel:
 
 ###############################################################################################################
 
+        # #preprocessing
+        # epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+        # mne.set_eeg_reference(epochs, copy=False) #average reference works badly
+        # epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20) #laplacian works badly
+        # from mne.preprocessing import ICA
+        # ica = ICA(n_components=0.95)
+        # ica.fit(epochs)
+        # ica.plot_sources(epochs)
+        # #corrmap?  https://mne.tools/stable/auto_tutorials/preprocessing/40_artifact_correction_ica.html
 
+        # #visualize features
         # from mne.time_frequency import tfr_morlet
         # from mne import viz
         # from mne_features import feature_extraction
@@ -98,19 +112,12 @@ class MLModel:
         # #https://mne.tools/stable/auto_tutorials/time-freq/20_sensors_time_frequency.html
 
 
-        #preprocessing
-        # Apply band-pass filter
-        epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False)
-
-
-        #CSP + LDA classifier
-        from mne.decoding import CSP
-        from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-        from sklearn.pipeline import Pipeline
-        lda = LinearDiscriminantAnalysis()
-        csp = CSP(n_components=6, reg=None, log=True, norm_trace=False)
-        self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
-        trials_data = epochs.get_data()
+        # #CSP + LDA classifier
+        # lda = LinearDiscriminantAnalysis()
+        # csp = CSP(n_components=6, reg=None, log=True, norm_trace=False)
+        # self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
+        # trials_data = epochs.get_data()
+        # #doi:10.1109/MSP.2008.4408441
 
 
         # #many features + SVM classifier
@@ -119,18 +126,21 @@ class MLModel:
         # from sklearn.pipeline import make_pipeline
         # from sklearn.decomposition import PCA
         # from sklearn.manifold import TSNE
-        # from mne_features import feature_extraction
         # from mne.decoding import CSP
-        # self.clf = make_pipeline(StandardScaler(), SVC(C=1, kernel='linear')) #regularizarion C >1. greater C for better generalization
-        # # self.clf = SVC(C=1, kernel='linear')
-        # yt = self.labels+self.augmented_labels
-        # trials_data = feature_extraction.extract_features(epochs.get_data(), sfreq, ['pow_freq_bands','kurtosis','rms','hurst_exp','decorr_time','samp_entropy','spect_entropy','spect_slope','hjorth_mobility','hjorth_complexity','teager_kaiser_energy','phase_lock_val','time_corr','spect_corr'], \
-        #             funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq, self.filt_h_freq)})
-        #             # funcs_params={'pow_freq_bands__freq_bands': np.array([0.5, 4., 8., 12., 28., 40.])})
-        # csp = CSP(n_components=6, reg=None, log=True, norm_trace=False)
-        # trials_data = np.append(trials_data, csp.fit_transform(epochs.get_data(), yt), axis=1) #on validation use transform instead of fit_transform
+        # # self.clf = make_pipeline(StandardScaler(), SVC(C=1, kernel='linear')) #regularizarion C >1. greater C for better generalization
+        # self.clf = SVC(C=1, kernel='linear')
+        # #svm descision boundary visualization: https://scikit-learn.org/0.18/auto_examples/svm/plot_iris.html
+        #
+        # trials_data = extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
+        # trials_data = np.append(trials_data, extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq,self.filt_h_freq,4), 'pow_freq_bands__log': True}), axis=1)
+        # csp = CSP(n_components=6, transform_into='csp_space')
+        # source_data = csp.fit_transform(epochs.get_data(), self.labels+self.augmented_labels)
         # # csp.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
         # # csp.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
+        # trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
+        # trials_data = np.append(trials_data, extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq,self.filt_h_freq,4), 'pow_freq_bands__log': True}), axis=1)
+        #
+        # yt = self.labels+self.augmented_labels
         # pca = PCA()
         # scaler = StandardScaler()
         # trials_data = scaler.fit_transform(trials_data,yt)
@@ -147,7 +157,6 @@ class MLModel:
         # plt.figure()
         # plt.scatter(Xt[:,0], Xt[:,1], c=yt)
         # plt.show(block=False)
-        # #svm descision boundary visualization: https://scikit-learn.org/0.18/auto_examples/svm/plot_iris.html
 
 
         # #raw eeg + multi-layer perceptron
@@ -155,8 +164,13 @@ class MLModel:
         # self.clf = MLPClassifier(hidden_layer_sizes=(int(epochs.times.shape[0]/4), int(epochs.times.shape[0]/8), 40, 40, 20), verbose=True)
         # trials_data = epochs.get_data().reshape((len(epochs),-1))
 
-
 ###############################################################################################################
+
+        epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+        self.clf = LinearDiscriminantAnalysis()
+        csp = CSP(n_components=6, transform_into='csp_space')
+        source_data = csp.fit_transform(epochs.get_data(), self.labels+self.augmented_labels)
+        trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
 
         #cross validation
         # from sklearn.model_selection import cross_validate, KFold
