@@ -38,9 +38,11 @@ class MLModel:
         self.augmented_labels: List[int] = augmented_labels
         self.debug = True
         self.clf = None
+        self.csp = None
         self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
         self.filt_l_freq = 7
         self.filt_h_freq = 30
+        self.n_csp_comp = 6
 
         mpl.use('TkAgg')
 
@@ -114,7 +116,7 @@ class MLModel:
 
         # #CSP + LDA classifier
         # lda = LinearDiscriminantAnalysis()
-        # csp = CSP(n_components=6, reg=None, log=True, norm_trace=False)
+        # csp = CSP(n_components=self.n_csp_comp, reg=None, log=True, norm_trace=False)
         # self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
         # trials_data = epochs.get_data()
         # #doi:10.1109/MSP.2008.4408441
@@ -133,7 +135,7 @@ class MLModel:
         #
         # trials_data = extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
         # trials_data = np.append(trials_data, extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq,self.filt_h_freq,4), 'pow_freq_bands__log': True}), axis=1)
-        # csp = CSP(n_components=6, transform_into='csp_space')
+        # csp = CSP(n_components=self.n_csp_comp, transform_into='csp_space')
         # source_data = csp.fit_transform(epochs.get_data(), self.labels+self.augmented_labels)
         # # csp.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
         # # csp.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
@@ -168,8 +170,8 @@ class MLModel:
 
         epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
         self.clf = LinearDiscriminantAnalysis()
-        csp = CSP(n_components=6, transform_into='csp_space')
-        source_data = csp.fit_transform(epochs.get_data(), self.labels+self.augmented_labels)
+        self.csp = CSP(n_components=self.n_csp_comp, transform_into='csp_space')
+        source_data = self.csp.fit_transform(epochs.get_data(), self.labels+self.augmented_labels)
         trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
 
         #cross validation
@@ -187,6 +189,9 @@ class MLModel:
         self.clf.fit(trials_data, self.labels + self.augmented_labels)
 
     def online_predict(self, data: NDArray, eeg: EEG):
+
+        sfreq: int = eeg.sfreq
+
         # Prepare the data to MNE functions
         data = data.astype(np.float64)
 
@@ -195,10 +200,12 @@ class MLModel:
 
         # Filter the data ( band-pass only)
         data = mne.filter.filter_data(data, l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, sfreq=eeg.sfreq, pad='edge', verbose=False)
+        data = self.csp.transform(data[np.newaxis])
+        data = extract_features(data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
 
         # Predict
-        pred = self.clf.predict(data[np.newaxis])[0]
-        pred_prob = self.clf.predict_proba(data[np.newaxis])[0]
+        pred = self.clf.predict(data)[0]
+        pred_prob = self.clf.predict_proba(data)[0]
 
         ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
         if pred == 0:
