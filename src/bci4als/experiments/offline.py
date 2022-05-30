@@ -2,15 +2,13 @@ import os
 import pickle
 import sys
 import time
-from tkinter import messagebox, filedialog
+from tkinter import messagebox
 from typing import Dict, List, Any
 import pandas as pd
 from .experiment import Experiment
 from src.bci4als.eeg import EEG
 from playsound import playsound
 from psychopy import visual
-from scipy.io import savemat, loadmat
-import numpy as np
 
 
 class OfflineExperiment(Experiment):
@@ -188,35 +186,6 @@ class OfflineExperiment(Experiment):
         labels_path = os.path.join(self.session_directory, 'labels.csv')
         print(f"Saving labels to {labels_path}")
         pd.DataFrame.from_dict({'name': self.labels}).to_csv(labels_path, index=False, header=False)
-
-        trials_mat = np.stack(trials)
-        train_data = {'trials':trials_mat, 'labels':self.labels}
-        savemat(os.path.join(self.session_directory, 'train_data.mat'), train_data)
-
-    def load_recorded_trials(self):
-
-        # tr = pickle.load(open("C:\\My Files\\Work\\BGU\\Datasets\\drone BCI\\1 Daniel50\\trials.pickle", 'rb'))
-        # ch_names = tr[0].columns
-        # recorded_trials = loadmat('C:/My Files/Work/BGU/Datasets/drone BCI/1 Daniel50/augmented_train_data_3cond.mat')
-
-        trials_mat_fp = filedialog.askopenfilename(title='Select trials file', initialdir="C:\My Files\Work\BGU\Datasets\drone BCI", filetypes=[("mat files", "*.mat")])
-        recorded_trials = loadmat(trials_mat_fp)
-
-        self.eeg.on() #get cap eeg settings
-        self.eeg.off()
-        ch_names = self.eeg.get_board_names()
-
-        trials = []
-        augmented_trials = []
-        for iTrl in range(recorded_trials['train_data_trials'].shape[0]):
-            trials.append(pd.DataFrame(recorded_trials['train_data_trials'][iTrl,:,:], columns=ch_names))
-        for iTrl in range(recorded_trials['augmented_data_trials'].shape[0]):
-            augmented_trials.append(pd.DataFrame(recorded_trials['augmented_data_trials'][iTrl,:,:], columns=ch_names))
-
-        labels = recorded_trials['train_data_labels'][0].tolist()
-        augmented_labels = recorded_trials['augmented_data_labels'][0].tolist()
-
-        return trials, labels, augmented_trials, augmented_labels
 
     def run(self):
         # Init the current experiment folder
