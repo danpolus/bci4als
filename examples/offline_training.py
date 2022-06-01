@@ -2,13 +2,13 @@
 from src.bci4als.ml_model import MLModel
 from src.bci4als.experiments.offline import OfflineExperiment
 
-def offline_experiment(eeg, load_recorded_trials_flg):
+def offline_experiment(eeg, num_trials, load_recorded_trials_flg):
 
-    exp = OfflineExperiment(eeg=eeg, num_trials=60, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
+    exp = OfflineExperiment(eeg=eeg, num_trials=num_trials, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
     if load_recorded_trials_flg:
         trials, labels, augmented_trials, augmented_labels = exp.load_recorded_trials()
-        # augmented_trials = [] #don't use augmentation
-        # augmented_labels = []
+        augmented_trials = [] #don't use augmentation
+        augmented_labels = []
         # trials = [] #don't use original trials
         # labels = []
     else:

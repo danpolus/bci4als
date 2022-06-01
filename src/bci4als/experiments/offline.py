@@ -16,7 +16,7 @@ import numpy as np
 class OfflineExperiment(Experiment):
 
     def __init__(self, eeg: EEG, num_trials: int, trial_length: float,
-                 next_length: float = 1, cue_length: float = 0.25, ready_length: float = 1,
+                 next_length: float = 1.2, cue_length: float = 0.25, ready_length: float = 1,
                  full_screen: bool = False, audio: bool = False):
 
         super().__init__(eeg, num_trials)
@@ -84,21 +84,18 @@ class OfflineExperiment(Experiment):
         trial_image = self.enum_image[self.labels[trial_index]]
         win = self.window_params['main_window']
 
-        # Show 'next' message
+        # Show 'next' message & cue & 'play' sound
         next_message = visual.TextStim(win, 'The next stimulus is...', color=color, height=height)
-        next_message.draw()
-        win.flip()
-        time.sleep(self.next_length)
-
-        # Show cue & play sound
         cue = visual.ImageStim(win, self.images_path[trial_image])
-        cue.draw()
-        win.flip()
-        time.sleep(self.cue_length)
 
-        # play sound
+        next_message.draw()
+        next_message.pos = (0, 0.2)
+        cue.draw()
+        cue.pos = (0, -0.2)
         if self.audio:
             playsound(self.audio_path[trial_image])
+        win.flip()
+        time.sleep(self.next_length)
 
         # Show ready & state message
         state_text = 'Trial: {} / {}'.format(trial_index + 1, self.num_trials)
@@ -135,7 +132,7 @@ class OfflineExperiment(Experiment):
         time.sleep(self.trial_length / 2)  # Wait
         while self.signalArray is None:  # epoch samples are not ready yet
             time.sleep(self.trial_length / 2) # Wait
-            self.signalArray = self.eeg.get_board_data()
+            self.signalArray = self.eeg.get_board_data() #zeros[25,600]
         # self.eeg.insert_marker(status='stop', label=self.labels[trial_index], index=trial_index)
 
         # Play end sound

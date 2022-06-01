@@ -9,7 +9,7 @@ import numpy as np
 
 from src.bci4als.eeg import EEG
 from src.bci4als.experiments.feedback import Feedback
-from psychopy import event
+from psychopy import event, core
 
 
 class Experiment:
@@ -92,6 +92,10 @@ class Experiment:
         # Wait for key-press
         event.waitKeys()
 
+        # Check for an escape event before showing every stimulus
+        if 'escape' in event.getKeys():
+            core.quit()
+
         # Empty the board
         if use_eeg:
             eeg.clear_board()
@@ -125,14 +129,15 @@ class Experiment:
             # try to convert the current sessions folder to int
             # and except if one of the sessions folder is not integer
             try:
-                current_sessions.append(int(f))
+                current_sessions.append(int(f[0:1]))
 
             except ValueError:
                 continue
 
         # Create the new session folder
-        session = (max(current_sessions) + 1) if len(current_sessions) > 0 else 1
-        session_folder = os.path.join(subject_folder, str(session))
+        session_num = (max(current_sessions) + 1) if len(current_sessions) > 0 else 1
+        session_date = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
+        session_folder = os.path.join(subject_folder, str(session_num), str(session_date))
         os.mkdir(session_folder)
 
         return session_folder
