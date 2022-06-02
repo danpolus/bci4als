@@ -19,7 +19,7 @@ class EEG:
     def get_board_data(self):# -> ndarray:
         """The method returns the data from board and remove it"""
         if self.DSIparser is None:
-            return np.zeros((25, 600))
+            return np.zeros((25, 600)) #just for debug
         return self.DSIparser.get_epoch(self.epoch_len_sec)
 
     def get_board_names(self) -> List[str]:

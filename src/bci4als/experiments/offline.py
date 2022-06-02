@@ -14,7 +14,7 @@ from psychopy import visual
 class OfflineExperiment(Experiment):
 
     def __init__(self, eeg: EEG, num_trials: int, trial_length: float,
-                 next_length: float = 1.2, cue_length: float = 0.25, ready_length: float = 1,
+                 next_length: float = 1.5, cue_length: float = 0.25, ready_length: float = 1,
                  full_screen: bool = False, audio: bool = False):
 
         super().__init__(eeg, num_trials)

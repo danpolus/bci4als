@@ -12,6 +12,7 @@ import matplotlib as mpl
 from sklearn import clone
 from mne.decoding import CSP
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from autoreject import AutoReject
 
 import sys
 sys.path.append('../../../Drone_Project/')
@@ -30,6 +31,8 @@ class MLModel:
         self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
         self.filt_l_freq = 7
         self.filt_h_freq = 30
+        self.max_bad_chan_in_epoch = 1
+        self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
         self.n_csp_comp = 6
         self.csp = CSP(n_components=self.n_csp_comp, transform_into='csp_space')
 
@@ -39,20 +42,15 @@ class MLModel:
         mpl.use('TkAgg')
 
     def online_predict(self, data: NDArray, eeg: EEG):
-
-        sfreq: int = eeg.sfreq
-
-        # Prepare the data to MNE functions
-        data = data.astype(np.float64)
-
-        montage = eeg.get_board_names()
-        data = np.delete(data, np.where(np.isin(montage, self.nonEEGchannels)), 0)
+        trial = [pd.DataFrame(data.astype(np.float64))]
+        epochs = self.convert2mne(trial, eeg)
 
         if self.model_type.lower() == 'csp_lda':
-            # Filter the data ( band-pass only)
-            data = mne.filter.filter_data(data, l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, sfreq=eeg.sfreq, pad='edge', verbose=False)
-            data = self.csp.transform(data[np.newaxis])
-            data = extract_features(data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
+            epochs, bad_epochs = self.preprocess(epochs, False)
+            if bad_epochs == True:
+                return Commands.error, 0
+            data = self.csp.transform(epochs.get_data())
+            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
@@ -61,26 +59,32 @@ class MLModel:
         pred_prob = self.clf.predict_proba(data)[0]
 
         ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
+        com_pred = Commands.error
         if pred == 0:
             com_pred = Commands.right
         elif pred == 1:
             com_pred = Commands.left
+        elif pred == 2:
+            com_pred = Commands.idle
         elif pred == 3:
             com_pred = Commands.forward #tongue
         elif pred == 4:
             com_pred = Commands.back #legs
-        else:
-            com_pred = Commands.idle #pred==2
-        return com_pred, pred_prob.max()
+
+        return com_pred, pred, pred_prob.max()
 
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
         if self.model_type.lower() == 'csp_lda':
-            source_data = self.csp_train(epochs,labels)
+            epochs, bad_epochs = self.preprocess(epochs, True)
+            labels = np.array(labels)[bad_epochs == False].tolist()
+            source_data = self.csp.fit_transform(epochs.get_data(), labels)
         else:
             raise NotImplementedError('The model type is not implemented yet')
-        self.class_train(source_data, np.array([]), labels, [], eeg)
+        pred_labels = self.class_train(source_data, np.array([]), labels, [], eeg)
+        if self.model_type.lower() == 'csp_lda':
+            return source_data, labels, pred_labels
 
 
     def convert2mne(self, trials: List[pd.DataFrame], eeg: EEG):
@@ -98,14 +102,22 @@ class MLModel:
         montage = make_standard_montage('standard_1020')
         epochs.drop_channels(self.nonEEGchannels)
         epochs.set_montage(montage)
+        # epochs.plot(scalings = dict(eeg=3e1))
 
         return epochs
 
 
-    def csp_train(self, epochs, labels):
+    def preprocess(self, epochs, fit_ar_flg):
         epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
-        source_data = self.csp.fit_transform(epochs.get_data(), labels)
-        return source_data
+        if fit_ar_flg:
+            self.ar.fit(epochs)
+        reject_log = self.ar.get_reject_log(epochs)
+        #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
+        bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.max_bad_chan_in_epoch)
+        epochs = epochs.drop(bad_epochs)
+        # bad_epochs = reject_log.bad_epochs
+        # epochs = self.ar.transform(epochs)
+        return epochs, bad_epochs
 
 
     def class_train(self, data, augmented_data, labels, augmented_labels, eeg: EEG):
@@ -135,6 +147,10 @@ class MLModel:
 
         # fit transformer and classifier to data
         self.clf.fit(trials_data, labels + augmented_labels)
+        pred_labels = self.clf.predict(trials_data)
+        train_acc = metrics.balanced_accuracy_score(labels + augmented_labels, pred_labels)
+        print('train acc all trials: {0:0.2f}'.format(train_acc))
+        return pred_labels
 
 
     def cross_valid(self, all_trials, labels, augmented_labels, plot_flg=False):
@@ -173,8 +189,8 @@ class MLModel:
             pred_train_join = np.append(pred_train_join,pred_train)
             pred_val_join = np.append(pred_val_join,pred_val)
 
-        train_acc = metrics.accuracy_score(y_train_join, pred_train_join)
-        val_acc = metrics.accuracy_score(y_val_join, pred_val_join)
+        train_acc = metrics.balanced_accuracy_score(y_train_join, pred_train_join)
+        val_acc = metrics.balanced_accuracy_score(y_val_join, pred_val_join)
         print('train accuracy score: {0:0.2f}'.format(train_acc))
         print('validation accuracy score: {0:0.2f}'.format(val_acc))
         if plot_flg:
@@ -196,7 +212,7 @@ class MLModel:
     #
     #     #preprocessing
     #     epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
-    #     mne.set_eeg_reference(epochs, copy=False) #average reference (works badly in some cases)
+    #     mne.set_eeg_reference(epochs, copy=False) #average reference (works badly in some cases, like CSP)   also: epochs = epochs.set_eeg_reference()
     #     epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20) #laplacian works badly
     #     from mne.preprocessing import ICA
     #     ica = ICA(n_components=0.95)
