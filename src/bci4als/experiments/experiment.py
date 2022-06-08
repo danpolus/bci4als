@@ -4,6 +4,8 @@ import sys
 from datetime import datetime
 from tkinter import messagebox
 from tkinter.filedialog import askdirectory
+from tkinter import Tk, Entry, Label, Button
+
 
 import numpy as np
 
@@ -76,6 +78,25 @@ class Experiment:
             sys.exit(-1)
         return subject_folder
 
+    def ask_num_trials(self):
+        win = Tk()
+        win.geometry('400x300')
+
+        # Define a function to return the Input data
+        def get_num_trials():
+            try:
+                self.num_trials = entry.get()
+            except:
+                ValueError('You should enter a number!')
+            win.destroy()
+
+        entry = Entry(win, width=42)
+        entry.place(relx=.5, rely=.2, anchor='center')
+        label = Label(win, text="Enter the number of trials you want.", font=('Helvetica 13'))
+        label.pack()
+        Button(win, text="submit", command=get_num_trials).place(relx=.5, rely=.3)
+        win.mainloop()
+
     @staticmethod
     def _wait_between_trials(feedback: Feedback, eeg: EEG, use_eeg: bool):
         """
@@ -135,9 +156,9 @@ class Experiment:
                 continue
 
         # Create the new session folder
-        session_num = (max(current_sessions) + 1) if len(current_sessions) > 0 else 1
-        session_date = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
-        session_folder = os.path.join(subject_folder, str(session_num), str(session_date))
+        session_num = str((max(current_sessions) + 1) if len(current_sessions) > 0 else 1) + '_'
+        session_date = str(datetime.now().strftime("%Y-%m-%d--%H-%M-%S"))
+        session_folder = os.path.join(subject_folder, session_num + session_date)
         os.mkdir(session_folder)
 
         return session_folder
