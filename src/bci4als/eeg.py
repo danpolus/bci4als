@@ -43,7 +43,7 @@ class EEG:
 
     def on(self):
         self.DSIparser.start()
-        time.sleep(0.2) #wait the thread to start
+        time.sleep(0.2)  # wait the thread to start
         self.sfreq = self.DSIparser.fsample
         self.chan_names = self.DSIparser.montage
 
