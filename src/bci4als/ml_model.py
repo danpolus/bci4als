@@ -135,7 +135,7 @@ class MLModel:
         #cross validation
         # from sklearn.model_selection import cross_validate, KFold
         # cv_results = cross_validate(self.clf, trials_data, labels, return_train_score=True, cv=KFold(n_splits=5, shuffle=True))
-        self.cross_valid(trials_data, labels, augmented_labels, True) #show confusion matrices
+        self.cross_valid(trials_data, labels, augmented_labels, False, False) #show confusion matrices
         crossv_res = {'cv_train':[],'cv_val':[]}
         for i in range(20):
             train_acc, val_acc = self.cross_valid(trials_data, labels, augmented_labels)
@@ -143,7 +143,7 @@ class MLModel:
             crossv_res['cv_val'] += [val_acc]
         self.train_acc = np.mean(crossv_res['cv_train'])
         self.val_acc = np.mean(crossv_res['cv_val'])
-        print('train acc: {0:0.2f}+-{1:0.3f}, val acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.val_acc, np.std(crossv_res['cv_val'])))
+        print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, val acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.val_acc, np.std(crossv_res['cv_val'])))
 
         # fit transformer and classifier to data
         self.clf.fit(trials_data, labels + augmented_labels)
@@ -153,7 +153,7 @@ class MLModel:
         return pred_labels
 
 
-    def cross_valid(self, all_trials, labels, augmented_labels, plot_flg=False):
+    def cross_valid(self, all_trials, labels, augmented_labels, plot_flg=False, verbose_flg=False):
 
         mpl.use('TkAgg')
 
@@ -191,8 +191,9 @@ class MLModel:
 
         train_acc = metrics.balanced_accuracy_score(y_train_join, pred_train_join)
         val_acc = metrics.balanced_accuracy_score(y_val_join, pred_val_join)
-        print('train accuracy score: {0:0.2f}'.format(train_acc))
-        print('validation accuracy score: {0:0.2f}'.format(val_acc))
+        if verbose_flg:
+            print('train accuracy score: {0:0.2f}'.format(train_acc))
+            print('validation accuracy score: {0:0.2f}'.format(val_acc))
         if plot_flg:
             cm_train = metrics.confusion_matrix(y_train_join, pred_train_join)
             cm_val = metrics.confusion_matrix(y_val_join, pred_val_join)
