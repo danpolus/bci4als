@@ -9,7 +9,7 @@ from src.bci4als.ml_model import MLModel
 from src.bci4als.experiments.offline import OfflineExperiment
 from Session import SessionType
 
-def offline_experiment(eeg, sessType: SessionType):
+def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
     num_trials = 60
 
@@ -18,6 +18,7 @@ def offline_experiment(eeg, sessType: SessionType):
         in_fn = "\\train_data.mat"
     elif sessType == SessionType.OfflineTrainLdaMI:
         in_fn = "\\alpha_beta_aug15_augmented_source_data.mat"
+        model_name = "\\model" # model_30trials
 
     #######################################################
 
@@ -27,9 +28,10 @@ def offline_experiment(eeg, sessType: SessionType):
         train_data = {'trials':np.stack(trials), 'labels':labels}
         session_directory = exp.session_directory
         savemat(session_directory + "\\train_data.mat", train_data)
-        model = train_model_save_source(trials, labels, eeg, session_directory)
-        with open(session_directory+"\\model.pkl", 'wb') as file: #save model
-            pickle.dump(model, file)
+        model = train_save_model_source(trials, labels, eeg, session_directory)
+        if train_trials_percent < 100:
+            trials, labels = reduce_train_data(train_data,train_trials_percent)
+            model = train_save_model_source(trials, labels, eeg, session_directory)
 
     elif sessType == SessionType.OfflineTrainCspMI or sessType == SessionType.OfflineTrainLdaMI:
 
@@ -52,40 +54,60 @@ def offline_experiment(eeg, sessType: SessionType):
                 cleanTrainData = load_augmented_data(fn)
                 trials=cleanTrainData['trials']
                 labels=cleanTrainData['labels']
-                model = train_model_save_source(trials, labels, eeg, session_directory)
+                if train_trials_percent < 100:
+                    trials, labels = reduce_train_data(trials, labels, train_trials_percent)
+                model = train_save_model_source(trials, labels, eeg, session_directory)
 
             else:
-                model = pickle.load(open(session_directory+"\\model.pkl", 'rb')) #load model
+                model = pickle.load(open(session_directory+model_name+".pkl", 'rb')) #load model
                 augSourceData = load_augmented_data(fn)
                 source_data = np.stack([t.to_numpy().T for t in augSourceData['trials']])
                 augmented_source_data = np.stack([t.to_numpy().T for t in augSourceData['augmented_trials']])
                 model.class_train(source_data, augmented_source_data, augSourceData['labels'], augSourceData['augmented_labels'], eeg)
                 # model.class_train(augmented_source_data, np.array([]), augSourceData['augmented_labels'], [], eeg) # accuracy of augmented data only
-
+                with open(session_directory+"\\model_"+str(len(source_data))+"trials_"+str(len(augmented_source_data))+"NFTaugmented.pkl", 'wb') as file: #save model
+                    pickle.dump(model, file)
             train_acc_list.append(model.train_acc)
             val_acc_list.append(model.val_acc)
-            with open(session_directory+"\\model.pkl", 'wb') as file: #save model
-                pickle.dump(model, file)
 
         print()
         for i in range(len(in_fn_list)):
             print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}'.format(train_acc_list[i], val_acc_list[i]))
         print('train acc mean: {0:0.2f}, validation acc mean: {1:0.2f}'.format(np.mean(train_acc_list), np.mean(val_acc_list)))
 
-
     else:
         return None
 
     return model
 
-
-def train_model_save_source(trials, labels, eeg, session_directory):
+def train_save_model_source(trials, labels, eeg, session_directory):
     model = MLModel(model_type='csp_lda')
     source_data, labels, pred_labels = model.full_offline_training(trials=trials, labels=labels, eeg=eeg)
     source_data_mat = {'trials':np.transpose(source_data,(0,2,1)), 'labels':labels, 'pred_labels':pred_labels}
-    savemat(session_directory + "\\source_data.mat", source_data_mat)
+    savemat(session_directory + "\\source_data_"+str(len(trials))+"trials.mat", source_data_mat)
+    with open(session_directory+"\\model_"+str(len(trials))+"trials.pkl", 'wb') as file: #save model
+        pickle.dump(model, file)
     return model
 
+def reduce_train_data(trials, labels, train_trials_percent):
+
+    reduced_trials = []
+    reduced_labels = []
+    for Label in np.unique(labels):
+        idx = np.where(labels == Label)[0]
+        np.random.shuffle(idx)
+        idx = idx[0:int(np.round(idx.shape[0]*train_trials_percent/100))]
+        reduced_trials += [trials[i] for i in idx]
+        reduced_labels += [labels[i] for i in idx]
+
+    # #keep only one label
+    # Label = 0
+    # for i in sorted(range(len(labels)), reverse=True):
+    #     if labels[i] != Label:
+    #         labels.pop(i)
+    #         trials.pop(i)
+
+    return reduced_trials, reduced_labels
 
 def load_augmented_data(trials_mat_fp):
     #trials returned as a list of dataframes
@@ -114,17 +136,6 @@ def load_augmented_data(trials_mat_fp):
         for iTrl in range(recorded_trials['augmented_data_trials'].shape[0]):
             augmented_trials.append(pd.DataFrame(recorded_trials['augmented_data_trials'][iTrl,:,:])) #, columns=ch_names))
         augmented_labels = recorded_trials['augmented_data_labels'][0].tolist()
-
-    # #keep only one label
-    # labl = 0
-    # for i in sorted(range(len(labels)), reverse=True):
-    #     if labels[i] != labl:
-    #         labels.pop(i)
-    #         trials.pop(i)
-    # for i in sorted(range(len(augmented_labels)), reverse=True):
-    #     if augmented_labels[i] != labl:
-    #         augmented_labels.pop(i)
-    #         augmented_trials.pop(i)
 
     AugmentedData = {'trials':trials, 'labels':labels, 'augmented_trials':augmented_trials, 'augmented_labels':augmented_labels}
     return AugmentedData
