@@ -8,16 +8,19 @@ import pandas as pd
 from .experiment import Experiment
 from src.bci4als.eeg import EEG
 from playsound import playsound
-from psychopy import visual
+from psychopy import visual, event, core
+from psychopy.hardware import keyboard
+
+
 
 
 class OfflineExperiment(Experiment):
 
-    def __init__(self, eeg: EEG, num_trials: int, trial_length: float,
-                 next_length: float = 1.5, cue_length: float = 0.25, ready_length: float = 1,
+    def __init__(self, eeg: EEG, trial_length: float,
+                 next_length: float = 1.5, cue_length: float = 1, ready_length: float = 1,
                  full_screen: bool = False, audio: bool = False):
 
-        super().__init__(eeg, num_trials)
+        super().__init__(eeg)
         self.experiment_type = "Offline"
         self.window_params: Dict[str, Any] = {}
         self.full_screen: bool = full_screen
@@ -68,16 +71,33 @@ class OfflineExperiment(Experiment):
                               'idle': idle_stim, 'tongue': tongue_stim, 'legs': legs_stim}
 
     def instruction_msg(self):
+        global event
         win = self.window_params['main_window']
         color = self.visual_params['text_color']
-        height = self.visual_params['text_height']
         instruction_txt = "Let's start with instructions:\n" \
                           "This is a motor-imagery experiment. You should imagine movements but keep your body still.\n" \
                           "- When you see an arrow pointing to the right please imagine yourself moving your right hand\n" \
                           "- When you see an arrow pointing to the left please imagine yourself moving your left hand\n" \
                           "- When you see a green square, rest and don't imagine any movement\n" \
-                          "- IF YOU HAVE TO BLINK OR MOVE A BIT, DO IT BETWEEN TRIALS DURING THE PREPARATION PERIOD"
-        visual.TextStim (win, instruction_txt, color=color, height=height)
+                          "- IF YOU HAVE TO BLINK OR MOVE A BIT, DO IT BETWEEN TRIALS DURING THE PREPARATION PERIOD. \n \n" \
+                          "Please press sapce to continue."
+        inst = visual.TextStim(win, instruction_txt, font='arial 12', color=color)
+        inst.setSize(10)
+        # inst.font = 'arial 10'
+
+        inst.draw()
+        win.flip()
+        kb = keyboard.Keyboard()
+        # keys = kb.getKeys(['right', 'left', 'quit'], waitRelease=True)
+        # time
+        # wait for keypresses here
+        keys = kb.waitKeys(maxWait=5)
+        for thisKey in keys:
+            if thisKey == 'esacpe':  # it is equivalent to the string 'q'
+                core.quit()
+            else:
+                return
+
 
     def _user_messages(self, trial_index):
         """
@@ -98,14 +118,17 @@ class OfflineExperiment(Experiment):
         next_message = visual.TextStim(win, 'The next stimulus is...', color=color, height=height)
         cue = visual.ImageStim(win, self.images_path[trial_image])
 
-        next_message.draw()
         next_message.pos = (0, 0.2)
-        cue.draw()
+        next_message.draw()
+        win.flip()
+        time.sleep(self.next_length)
         cue.pos = (0, -0.2)
+        cue.draw()
+
         if self.audio:
             playsound(self.audio_path[trial_image])
         win.flip()
-        time.sleep(self.next_length)
+        time.sleep(self.cue_length)
 
         # Show ready & state message
         state_text = 'Trial: {} / {}'.format(trial_index + 1, self.num_trials)
@@ -197,6 +220,11 @@ class OfflineExperiment(Experiment):
         pd.DataFrame.from_dict({'name': self.labels}).to_csv(labels_path, index=False, header=False)
 
     def run(self):
+        global visual, core, event
+        # init the trials number
+        self.ask_num_trials()
+        self._init_labels(keys=self.label_keys)
+
         # Init the current experiment folder
         self.subject_directory = self._ask_subject_directory()
         self.session_directory = self.create_session_folder(self.subject_directory)
@@ -205,9 +233,6 @@ class OfflineExperiment(Experiment):
         # initialize headset
         print("Turning EEG connection ON")
         self.eeg.on()
-
-        #init the trials number
-        self.ask_num_trials()
 
         # Create experiment's metadata
         self.write_metadata()

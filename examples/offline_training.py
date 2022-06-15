@@ -12,11 +12,10 @@ from Session import SessionType
 def offline_experiment(eeg, model, sessType: SessionType):
 
     session_directory = "C:\My Files\Work\BGU\Datasets\drone BCI"
-    num_trials = 60
 
     if sessType == SessionType.OfflineExpMI or sessType == SessionType.OfflineTrainCspMI:
         if sessType == SessionType.OfflineExpMI:
-            exp = OfflineExperiment(eeg=eeg, num_trials=num_trials, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
+            exp = OfflineExperiment(eeg=eeg, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
             trials, labels = exp.run()
             session_directory = exp.session_directory
             train_data = {'trials':np.stack(trials), 'labels':labels}

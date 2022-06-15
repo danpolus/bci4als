@@ -15,8 +15,8 @@ from psychopy import event, core
 
 
 class Experiment:
-    def __init__(self, eeg, num_trials):
-        self.num_trials: int = num_trials
+    def __init__(self, eeg):
+        self.num_trials = 0
         self.eeg: EEG = eeg
 
         # override in subclass
@@ -84,10 +84,7 @@ class Experiment:
 
         # Define a function to return the Input data
         def get_num_trials():
-            try:
-                self.num_trials = entry.get()
-            except:
-                ValueError('You should enter a number!')
+            self.num_trials = int(entry.get())
             win.destroy()
 
         entry = Entry(win, width=42)
