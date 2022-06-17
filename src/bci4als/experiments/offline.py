@@ -81,16 +81,13 @@ class OfflineExperiment(Experiment):
                           "- When you see a green square, rest and don't imagine any movement\n" \
                           "- IF YOU HAVE TO BLINK OR MOVE A BIT, DO IT BETWEEN TRIALS DURING THE PREPARATION PERIOD. \n \n" \
                           "Please press sapce to continue."
-        inst = visual.TextStim(win, instruction_txt, font='arial 12', color=color)
-        inst.setSize(10)
+        inst = visual.TextStim(win, instruction_txt, font='arial', color=color)
+        inst.setSize(12)
         # inst.font = 'arial 10'
 
         inst.draw()
         win.flip()
         kb = keyboard.Keyboard()
-        # keys = kb.getKeys(['right', 'left', 'quit'], waitRelease=True)
-        # time
-        # wait for keypresses here
         keys = kb.waitKeys(maxWait=5)
         for thisKey in keys:
             if thisKey == 'esacpe':  # it is equivalent to the string 'q'
@@ -115,15 +112,13 @@ class OfflineExperiment(Experiment):
         win = self.window_params['main_window']
 
         # Show 'next' message & cue & 'play' sound
-        next_message = visual.TextStim(win, 'The next stimulus is...', color=color, height=height)
-        cue = visual.ImageStim(win, self.images_path[trial_image])
-
-        next_message.pos = (0, 0.2)
-        next_message.draw()
-        win.flip()
-        time.sleep(self.next_length)
-        cue.pos = (0, -0.2)
+        next_message = visual.TextStim(win, 'The next stimulus is...', pos=[0, 100], color=color, height=height)
+        cue = visual.ImageStim(win, self.images_path[trial_image], pos=[0, -50], size=[630,360])
         cue.draw()
+        next_message.draw()
+
+
+        # next_message.pos = (0, 0.3)
 
         if self.audio:
             playsound(self.audio_path[trial_image])
