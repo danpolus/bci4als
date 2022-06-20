@@ -14,8 +14,8 @@ from psychopy import event, core
 
 
 class Experiment:
-    def __init__(self, eeg, num_trials):
-        self.num_trials: int = num_trials
+    def __init__(self, eeg):
+        self.num_trials = 0
         self.eeg: EEG = eeg
 
         # override in subclass
@@ -84,7 +84,7 @@ class Experiment:
         # Define a function to return the Input data
         def get_num_trials():
             try:
-                self.num_trials = entry.get()
+                self.num_trials = int(entry.get())
             except:
                 ValueError('You should enter a number!')
             win.destroy()
@@ -155,9 +155,9 @@ class Experiment:
                 continue
 
         # Create the new session folder
-        session_num = (max(current_sessions) + 1) if len(current_sessions) > 0 else 1
-        session_date = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
-        session_folder = os.path.join(subject_folder, str(session_num), str(session_date))
+        session_num = str((max(current_sessions) + 1) if len(current_sessions) > 0 else 1) + '_'
+        session_date = str(datetime.now().strftime("%Y-%m-%d--%H-%M-%S"))
+        session_folder = os.path.join(subject_folder, session_num + session_date)
         os.mkdir(session_folder)
 
         return session_folder
