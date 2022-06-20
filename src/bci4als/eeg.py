@@ -42,12 +42,12 @@ class EEG:
         self.DSIparser.get_epoch(self.DSIparser.fifo_len_sec)
 
     def on(self):
-        # self.DSIparser.start()
-        # time.sleep(0.2)  # wait the thread to start
-        # self.sfreq = self.DSIparser.fsample
-        # self.chan_names = self.DSIparser.montage
+        self.DSIparser.start()
+        time.sleep(0.2)  # wait the thread to start
+        self.sfreq = self.DSIparser.fsample
+        self.chan_names = self.DSIparser.montage
         return
 
     def off(self):
-        # self.DSIparser.stop()
+        self.DSIparser.stop()
         return

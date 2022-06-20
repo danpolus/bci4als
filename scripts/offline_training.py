@@ -11,8 +11,6 @@ from Session import SessionType
 
 def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
-    num_trials = 60
-
     session_directory = "C:\My Files\Work\BGU\Datasets\drone BCI"
     if sessType == SessionType.OfflineTrainCspMI:
         in_fn = "\\train_data.mat"
@@ -23,7 +21,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
     #######################################################
 
     if sessType == SessionType.OfflineExpMI:
-        exp = OfflineExperiment(eeg=eeg, num_trials=num_trials, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
+        exp = OfflineExperiment(eeg=eeg, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
         trials, labels = exp.run()
         train_data = {'trials':np.stack(trials), 'labels':labels}
         session_directory = exp.session_directory
