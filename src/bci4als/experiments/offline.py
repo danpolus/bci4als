@@ -48,6 +48,18 @@ class OfflineExperiment(Experiment):
 
         self.signalArray = None
 
+    def instruction_msg(self):
+        win = self.window_params['main_window']
+        color = self.visual_params['text_color']
+        height = self.visual_params['text_height']
+        instruction_txt = "Let's start with instructions:\n" \
+                          "This is a motor-imagery experiment. You should imagine movements but keep your body still.\n" \
+                          "- When you see an arrow pointing to the right please imagine yourself moving your right hand\n" \
+                          "- When you see an arrow pointing to the left please imagine yourself moving your left hand\n" \
+                          "- When you see a green square, rest and don't imagine any movement\n" \
+                          "- IF YOU HAVE TO BLINK OR MOVE A BIT, DO IT BETWEEN TRIALS DURING THE PREPARATION PERIOD"
+        visual.TextStim (win, instruction_txt, color=color, height=height)
+
     def _init_window(self):
         """
         init the psychopy window
@@ -194,6 +206,9 @@ class OfflineExperiment(Experiment):
         print("Turning EEG connection ON")
         self.eeg.on()
 
+        #init the trials number
+        self.ask_num_trials()
+
         # Create experiment's metadata
         self.write_metadata()
 
@@ -201,6 +216,7 @@ class OfflineExperiment(Experiment):
 
         # Init psychopy and screen params
         self._init_window()
+        self.instruction_msg()
 
         print(f"Running {self.num_trials} trials")
 
@@ -229,3 +245,7 @@ class OfflineExperiment(Experiment):
         self._export_files(trials)
 
         return trials, self.labels
+
+
+# if __name__ == '__main__':
+    # OfflineExperiment()
