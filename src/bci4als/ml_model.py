@@ -23,8 +23,9 @@ class MLModel:
     A class used to wrap all the ML model train, partial train and predictions
     """
 
-    def __init__(self, model_type: str = 'csp_lda'):
+    def __init__(self, model_name: str = '', model_type: str = 'csp_lda'):
 
+        self.model_name = model_name
         self.model_type = model_type
         self.clf = None
 
@@ -40,23 +41,28 @@ class MLModel:
         self.val_acc = None
 
         mpl.use('TkAgg')
+        mne.set_log_level('warning')
 
-    def online_predict(self, data: NDArray, eeg: EEG):
-        trial = [pd.DataFrame(data.astype(np.float64))]
-        epochs = self.convert2mne(trial, eeg)
 
+    def predict(self, trials: List[pd.DataFrame], eeg: EEG):
+        epochs = self.convert2mne(trials, eeg)
         if self.model_type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, False)
-            if bad_epochs == True:
-                return Commands.error, 0
             data = self.csp.transform(epochs.get_data())
             data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
         # Predict
-        pred = self.clf.predict(data)[0]
-        pred_prob = self.clf.predict_proba(data)[0]
+        pred = self.clf.predict(data)
+        pred_prob = self.clf.predict_proba(data)
+        pred_prob[bad_epochs,:] = 0
+        return pred, pred_prob
+
+
+    def online_predict(self, data: NDArray, eeg: EEG):
+        trial = [pd.DataFrame(data.astype(np.float64))]
+        pred, pred_prob = self.predict(trial,eeg)
 
         ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
         com_pred = Commands.error
@@ -70,14 +76,14 @@ class MLModel:
             com_pred = Commands.forward #tongue
         elif pred == 4:
             com_pred = Commands.back #legs
-
-        return com_pred, pred, pred_prob.max()
+        return com_pred, pred_prob[0,:].max()
 
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
         if self.model_type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, True)
+            epochs = epochs.drop(bad_epochs, verbose=False)
             labels = np.array(labels)[bad_epochs == False].tolist()
             source_data = self.csp.fit_transform(epochs.get_data(), labels)
         else:
@@ -91,17 +97,17 @@ class MLModel:
         #create mne frame
         ch_names = eeg.get_board_names()
         ch_types = ['eeg'] * len(ch_names)
-        info = mne.create_info(ch_names, eeg.sfreq, ch_types)
+        info = mne.create_info(ch_names, eeg.sfreq, ch_types, verbose=False)
 
         # convert data to mne.Epochs
         trials: List[NDArray] = [t.to_numpy().T for t in trials]
         epochs_array: np.ndarray = np.stack(trials)
-        epochs = mne.EpochsArray(epochs_array, info)
+        epochs = mne.EpochsArray(epochs_array, info, verbose=False)
 
         # set montage
         montage = make_standard_montage('standard_1020')
         epochs.drop_channels(self.nonEEGchannels)
-        epochs.set_montage(montage)
+        epochs.set_montage(montage,verbose=False)
         # epochs.plot(scalings = dict(eeg=3e1))
 
         return epochs
@@ -114,7 +120,6 @@ class MLModel:
         reject_log = self.ar.get_reject_log(epochs)
         #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
         bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.max_bad_chan_in_epoch)
-        epochs = epochs.drop(bad_epochs)
         # bad_epochs = reject_log.bad_epochs
         # epochs = self.ar.transform(epochs)
         return epochs, bad_epochs
