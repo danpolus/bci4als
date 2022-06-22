@@ -23,7 +23,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
     model = None
     if sessType == SessionType.OfflineExpMI:
-        exp = OfflineExperiment(eeg=eeg, trial_length=eeg.epoch_len_sec, full_screen=True, audio=False)
+        exp = OfflineExperiment(eeg=eeg, trial_length=eeg.epoch_len_sec, full_screen=False, audio=False)
         trials, labels = exp.run()
         train_data = {'trials':np.stack(trials), 'labels':labels}
         session_directory = exp.session_directory
@@ -65,8 +65,8 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
                 augmented_source_data = np.stack([t.to_numpy().T for t in augSourceData['augmented_trials']])
                 model.class_train(source_data, augmented_source_data, augSourceData['labels'], augSourceData['augmented_labels'], eeg)
                 # model.class_train(augmented_source_data, np.array([]), augSourceData['augmented_labels'], [], eeg) # accuracy of augmented data only
-                model.model_name = "model_"+str(len(source_data))+"trials_"+str(len(augmented_source_data))+"NFTaugmented"
-                with open(session_directory+"\\"+model.model_name+".pkl", 'wb') as file: #save model
+                model.name = "model_"+str(len(source_data))+"trials_"+str(len(augmented_source_data))+"NFTaugmented"
+                with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
                     pickle.dump(model, file)
             train_acc_list.append(model.train_acc)
             val_acc_list.append(model.val_acc)
@@ -89,7 +89,7 @@ def train_save_model_source(trials, labels, eeg, session_directory):
     source_data, labels, pred_labels = model.full_offline_training(trials=trials, labels=labels, eeg=eeg)
     source_data_mat = {'trials':np.transpose(source_data,(0,2,1)), 'labels':labels, 'pred_labels':pred_labels}
     savemat(session_directory + "\\source_data_"+str(len(trials))+"trials.mat", source_data_mat)
-    with open(session_directory+"\\"+model.model_name+".pkl", 'wb') as file: #save model
+    with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
         pickle.dump(model, file)
     return model
 
@@ -146,7 +146,7 @@ def load_trials_from_file(trials_mat_fp):
 
 def load_session_models(session_directory):
     subject_models = []
-    in_dir = filedialog.askdirectory(title='Select session folder', initialdir=session_directory)
+    in_dir = filedialog.askdirectory(title='Select session folder with saved models', initialdir=session_directory)
     in_dir_list = os.listdir(in_dir)
     for fn in in_dir_list:
         if not os.path.isdir(in_dir+"\\"+fn) and fn[0:5]=='model' and fn[-4:]=='.pkl':
@@ -159,4 +159,4 @@ def present_test_accuracy(subject_models, eeg, trials, labels):
     for model in subject_models:
         pred_labels, pred_prob = model.predict(trials, eeg)
         test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
-        print(model.model_name+'  test accuracy: {0:0.2f}'.format(test_acc))
+        print(model.name+'  test accuracy: {0:0.2f}'.format(test_acc))

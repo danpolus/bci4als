@@ -25,8 +25,8 @@ class MLModel:
 
     def __init__(self, model_name: str = '', model_type: str = 'csp_lda'):
 
-        self.model_name = model_name
-        self.model_type = model_type
+        self.name = model_name
+        self.type = model_type
         self.clf = None
 
         self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
@@ -46,7 +46,7 @@ class MLModel:
 
     def predict(self, trials: List[pd.DataFrame], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
-        if self.model_type.lower() == 'csp_lda':
+        if self.type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, False)
             data = self.csp.transform(epochs.get_data())
             data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
@@ -66,22 +66,22 @@ class MLModel:
 
         ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
         com_pred = Commands.error
-        if pred == 0:
+        if pred[0] == 0:
             com_pred = Commands.right
-        elif pred == 1:
+        elif pred[0] == 1:
             com_pred = Commands.left
-        elif pred == 2:
+        elif pred[0] == 2:
             com_pred = Commands.idle
-        elif pred == 3:
+        elif pred[0] == 3:
             com_pred = Commands.forward #tongue
-        elif pred == 4:
+        elif pred[0] == 4:
             com_pred = Commands.back #legs
         return com_pred, pred_prob[0,:].max()
 
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
-        if self.model_type.lower() == 'csp_lda':
+        if self.type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, True)
             epochs = epochs.drop(bad_epochs, verbose=False)
             labels = np.array(labels)[bad_epochs == False].tolist()
@@ -89,7 +89,7 @@ class MLModel:
         else:
             raise NotImplementedError('The model type is not implemented yet')
         pred_labels = self.class_train(source_data, np.array([]), labels, [], eeg)
-        if self.model_type.lower() == 'csp_lda':
+        if self.type.lower() == 'csp_lda':
             return source_data, labels, pred_labels
 
 
@@ -127,7 +127,7 @@ class MLModel:
 
     def class_train(self, data, augmented_data, labels, augmented_labels, eeg: EEG):
 
-        if self.model_type.lower() == 'csp_lda':
+        if self.type.lower() == 'csp_lda':
             self.clf = LinearDiscriminantAnalysis()
             source_data: np.ndarray = data
             if augmented_data.any():

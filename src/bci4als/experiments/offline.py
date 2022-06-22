@@ -47,6 +47,8 @@ class OfflineExperiment(Experiment):
         self.label_keys = (0, 1, 2) #MI labels fpr training
         self._init_labels(keys=self.label_keys)
 
+        self.kb = keyboard.Keyboard()
+
         self.signalArray = None
 
     def _init_window(self):
@@ -85,13 +87,11 @@ class OfflineExperiment(Experiment):
 
         inst.draw()
         win.flip()
-        kb = keyboard.Keyboard()
-        keys = kb.waitKeys(maxWait=5)
-        for thisKey in keys:
-            if thisKey == 'esacpe':  # it is equivalent to the string 'q'
-                core.quit()
-            else:
-                return
+        while 1:
+            keys = self.kb.waitKeys()
+            for thisKey in keys:
+                if thisKey == 'space':
+                    return
 
     def _user_messages(self, trial_index):
         """
@@ -113,7 +113,6 @@ class OfflineExperiment(Experiment):
         cue = visual.ImageStim(win, self.images_path[trial_image], pos=[0, -50], size=[630,360])
         cue.draw()
         next_message.draw()
-
 
         # next_message.pos = (0, 0.3)
 
@@ -168,33 +167,6 @@ class OfflineExperiment(Experiment):
         if 'escape' == self.get_keypress():
             sys.exit(-1)
 
-    def _extract_trials(self) -> List[pd.DataFrame]:
-        """
-        The method extract from the offline experiment collected EEG data and split it into trials.
-        The method export a pickle file to the subject directory with a list with all the trials.
-        :return: list of trials where each trial is a pandas DataFrame
-        """
-
-        # Wait for a sec to the OpenBCI to get the last marker
-        time.sleep(0.5)
-
-        # Extract all the recorded data of the whole experiment
-        trials = []
-        data = self.eeg.get_board_data()
-        ch_names = self.eeg.get_board_names()
-        ch_channels = self.eeg.get_board_channels()
-        durations, labels = self.eeg.extract_trials(data)
-
-        # Assert the labels
-        assert self.labels == labels, 'The labels are not equals to the extracted labels'
-
-        # Append each
-        for start, end in durations:
-            trial = data[ch_channels, start:end]
-            trials.append(pd.DataFrame(data=trial.T, columns=ch_names))
-
-        return trials
-
     def _export_files(self, trials):
         """
         Export the experiment files (trials & labels)
@@ -230,7 +202,7 @@ class OfflineExperiment(Experiment):
         # Create experiment's metadata
         self.write_metadata()
 
-        messagebox.showinfo(title='bci4als', message='Start running trials...')
+        messagebox.showinfo(title='Motor Imagery Training', message='Start running trials...')
 
         # Init psychopy and screen params
         self._init_window()
@@ -248,11 +220,13 @@ class OfflineExperiment(Experiment):
             # Show stim on window
             self._show_stimulus(i)
 
+            keys = self.kb.getKeys()
+            for thisKey in keys:
+                if thisKey == 'escape':
+                    core.quit()
+
             #save new signalArray
             trials.append(pd.DataFrame(data=self.signalArray.T, columns=ch_names))
-
-        # # Export and return the data
-        # trials = self._extract_trials()
 
         self.window_params['main_window'].close()
 
@@ -263,7 +237,3 @@ class OfflineExperiment(Experiment):
         self._export_files(trials)
 
         return trials, self.labels
-
-
-# if __name__ == '__main__':
-    # OfflineExperiment()

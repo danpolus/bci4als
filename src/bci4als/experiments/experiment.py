@@ -64,15 +64,16 @@ class Experiment:
         """
 
         # get the CurrentStudy recording directory
-        if not messagebox.askokcancel(title='bci4als',
-                                      message="Welcome to the motor imagery EEG recorder."
-                                              "\n\nNumber of trials: {}\n\n"
-                                              "Please select the subject directory:".format(self.num_trials)):
-            sys.exit(-1)
+
+        # if not messagebox.askokcancel(title='bci4als',
+        #                               message="Welcome to the motor imagery EEG recorder."
+        #                                       "\n\nNumber of trials: {}\n\n"
+        #                                       "Please select the subject directory:".format(self.num_trials)):
+        #     sys.exit(-1)
 
         # show an "Open" dialog box and return the path to the selected file
         init_dir = os.path.join(os.path.split(os.path.abspath(''))[0], 'recordings')
-        subject_folder = askdirectory(initialdir=init_dir)
+        subject_folder = askdirectory(title='Please select the subject directory', initialdir=init_dir)
         if not subject_folder:
             sys.exit(-1)
         return subject_folder

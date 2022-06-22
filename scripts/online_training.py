@@ -1,23 +1,29 @@
-
-import numpy as np
-from scipy.io import savemat
 import pickle
+
 from bci4als.experiments.online import OnlineExperiment
-from scripts.offline_training import load_session_models, present_test_accuracy
+from bci4als.eeg import EEG
 
-def online_experiment(eeg):
 
-    session_directory = "C:\My Files\Work\BGU\Datasets\drone BCI"
+def run_experiment(model_path: str):
 
-    subject_models = load_session_models(session_directory)
+    model = pickle.load(open(model_path, 'rb'))
 
-    exp = OnlineExperiment(eeg=eeg, model=subject_models, num_trials=10, buffer_time=4, threshold=3, skip_after=8, co_learning=True, debug=False) # co_learning=False:   predict w/wo training
-    trials, labels = exp.run(use_eeg=True, full_screen=True)
-    exp_data = {'trials':np.stack(trials), 'labels':labels}
-    session_directory = exp.session_directory
-    savemat(session_directory + "\\exp_data.mat", exp_data)
-    for model in subject_models:
-        with open(session_directory+"\\"+model.model_name+".pkl", 'wb') as file: #save model
-            pickle.dump(model, file)
+    SYNTHETIC_BOARD = -1
+    CYTON_DAISY = 2
+    eeg = EEG(board_id=SYNTHETIC_BOARD)
 
-    present_test_accuracy(subject_models, eeg, trials, labels)
+    exp = OnlineExperiment(eeg=eeg, model=model, num_trials=10, buffer_time=4, threshold=3, skip_after=8,
+                           co_learning=True, debug=False) # co_learning=False:   predict w/wo training
+
+    exp.run(use_eeg=True, full_screen=True)
+
+
+if __name__ == '__main__':
+
+    model_path = r'../recordings/avi/23/model.pickle'
+    # model_path = None  # use if synthetic
+    run_experiment(model_path=model_path)
+
+# PAY ATTENTION!
+# If synthetic - model Path should be none
+# otherwise choose a model path
