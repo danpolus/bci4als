@@ -16,26 +16,23 @@ from autoreject import AutoReject
 
 import sys
 sys.path.append('../../../Drone_Project/')
-from droneCtrl import Commands
+from projectParams import getParams, DroneCommands
 
 class MLModel:
     """
     A class used to wrap all the ML model train, partial train and predictions
     """
 
-    def __init__(self, model_name: str = '', model_type: str = 'csp_lda'):
+    def __init__(self, model_name: str = ''):
+
+        self.projParams = getParams()
 
         self.name = model_name
-        self.type = model_type
-        self.clf = None
+        self.type = self.projParams['MiParams']['model_type']
 
-        self.nonEEGchannels = ['X1','X2','X3','TRG','CM','A1','A2']
-        self.filt_l_freq = 7
-        self.filt_h_freq = 30
-        self.max_bad_chan_in_epoch = 1
         self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
-        self.n_csp_comp = 6
-        self.csp = CSP(n_components=self.n_csp_comp, transform_into='csp_space')
+        self.csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
+        self.clf = None
 
         self.train_acc = None
         self.val_acc = None
@@ -49,7 +46,7 @@ class MLModel:
         if self.type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, False)
             data = self.csp.transform(epochs.get_data())
-            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
+            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
@@ -63,19 +60,17 @@ class MLModel:
     def online_predict(self, data: NDArray, eeg: EEG):
         trial = [pd.DataFrame(data.astype(np.float64))]
         pred, pred_prob = self.predict(trial,eeg)
-
-        ##self.enum_image = {0: 'right', 1: 'left', 2: 'idle', 3: 'tongue', 4: 'legs'}
-        com_pred = Commands.error
+        com_pred = DroneCommands.error
         if pred[0] == 0:
-            com_pred = Commands.right
+            com_pred = DroneCommands.right
         elif pred[0] == 1:
-            com_pred = Commands.left
+            com_pred = DroneCommands.left
         elif pred[0] == 2:
-            com_pred = Commands.idle
+            com_pred = DroneCommands.idle
         elif pred[0] == 3:
-            com_pred = Commands.forward #tongue
+            com_pred = DroneCommands.forward #tongue
         elif pred[0] == 4:
-            com_pred = Commands.back #legs
+            com_pred = DroneCommands.back #legs
         return com_pred, pred_prob[0,:].max()
 
 
@@ -106,7 +101,7 @@ class MLModel:
 
         # set montage
         montage = make_standard_montage('standard_1020')
-        epochs.drop_channels(self.nonEEGchannels)
+        epochs.drop_channels(self.projParams['EegParams']['nonEEGchannels'])
         epochs.set_montage(montage,verbose=False)
         # epochs.plot(scalings = dict(eeg=3e1))
 
@@ -114,12 +109,12 @@ class MLModel:
 
 
     def preprocess(self, epochs, fit_ar_flg):
-        epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+        epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
         if fit_ar_flg:
             self.ar.fit(epochs)
         reject_log = self.ar.get_reject_log(epochs)
         #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
-        bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.max_bad_chan_in_epoch)
+        bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.projParams['MiParams']['max_bad_chan_in_epoch'])
         # bad_epochs = reject_log.bad_epochs
         # epochs = self.ar.transform(epochs)
         return epochs, bad_epochs
@@ -131,9 +126,9 @@ class MLModel:
             self.clf = LinearDiscriminantAnalysis()
             source_data: np.ndarray = data
             if augmented_data.any():
-                # augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, sfreq=eeg.sfreq, pad='edge', verbose=False)
+                # augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False)
                 source_data = np.concatenate((source_data,augmented_data))
-            trials_data = extract_features(source_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
+            trials_data = extract_features(source_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
@@ -142,7 +137,7 @@ class MLModel:
         # cv_results = cross_validate(self.clf, trials_data, labels, return_train_score=True, cv=KFold(n_splits=5, shuffle=True))
         self.cross_valid(trials_data, labels, augmented_labels, False, False) #show confusion matrices
         crossv_res = {'cv_train':[],'cv_val':[]}
-        for i in range(20):
+        for i in range(self.projParams['MiParams']['nCV']):
             train_acc, val_acc = self.cross_valid(trials_data, labels, augmented_labels)
             crossv_res['cv_train'] += [train_acc]
             crossv_res['cv_val'] += [val_acc]
@@ -160,11 +155,8 @@ class MLModel:
 
     def cross_valid(self, all_trials, labels, augmented_labels, plot_flg=False, verbose_flg=False):
 
-        mpl.use('TkAgg')
-
-        nFold = 5
         nTrials = len(labels)
-        foldSize = int(np.ceil(nTrials/nFold))
+        foldSize = int(np.ceil(nTrials/self.projParams['MiParams']['nFold']))
 
         all_labels = np.array(labels+augmented_labels)
 
@@ -176,7 +168,7 @@ class MLModel:
         y_val_join = np.array([],dtype=int)
         pred_val_join = np.array([],dtype=int)
         pred_train_join = np.array([],dtype=int)
-        for iFold in range(nFold):
+        for iFold in range(self.projParams['MiParams']['nFold']):
             validation_inx = trials_inx[range(foldSize*iFold, min(foldSize*(iFold+1), nTrials))]
             train_inx = np.append(np.setdiff1d(trials_inx, validation_inx, assume_unique=True), augmented_trials_inx)
             X_train = all_trials[train_inx]
@@ -217,7 +209,7 @@ class MLModel:
     #     from sklearn.pipeline import Pipeline
     #
     #     #preprocessing
-    #     epochs.filter(l_freq=self.filt_l_freq, h_freq=self.filt_h_freq, skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+    #     epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
     #     mne.set_eeg_reference(epochs, copy=False) #average reference (works badly in some cases, like CSP)   also: epochs = epochs.set_eeg_reference()
     #     epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20) #laplacian works badly
     #     from mne.preprocessing import ICA
@@ -225,7 +217,7 @@ class MLModel:
     #     ica.fit(epochs)
     #     ica.plot_components()
     #     ica.plot_sources(epochs)
-    #     ecg_indices, _ = ica.find_bads_ecg(epochs, l_freq=self.filt_l_freq)
+    #     ecg_indices, _ = ica.find_bads_ecg(epochs, l_freq=self.projParams['MiParams']['l_freq'])
     #     eog_indices, _ = ica.find_bads_eog(epochs, threshold='auto')
     #     epochs = ica.apply(epochs, exclude=[ecg_indices + eog_indices], n_pca_components=0.95)
     #     #corrmap?  https://mne.tools/stable/auto_tutorials/preprocessing/40_artifact_correction_ica.html
@@ -260,7 +252,7 @@ class MLModel:
     #
     #     #CSP + LDA classifier
     #     lda = LinearDiscriminantAnalysis()
-    #     csp = CSP(n_components=self.n_csp_comp, reg=None, log=True, norm_trace=False)
+    #     csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], reg=None, log=True, norm_trace=False)
     #     self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
     #     trials_data = epochs.get_data()
     #     #doi:10.1109/MSP.2008.4408441
@@ -277,14 +269,14 @@ class MLModel:
     #     self.clf = SVC(C=1, kernel='linear')
     #     #svm descision boundary visualization: https://scikit-learn.org/0.18/auto_examples/svm/plot_iris.html
     #
-    #     trials_data = extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
-    #     trials_data = np.append(trials_data, extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq,self.filt_h_freq,4), 'pow_freq_bands__log': True}), axis=1)
-    #     csp = CSP(n_components=self.n_csp_comp, transform_into='csp_space')
+    #     trials_data = extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
+    #     trials_data = np.append(trials_data, extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq'],4), 'pow_freq_bands__log': True}), axis=1)
+    #     csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
     #     source_data = csp.fit_transform(epochs.get_data(), labels+augmented_labels)
     #     # csp.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
     #     # csp.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
-    #     trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.filt_l_freq,self.filt_h_freq]), 'pow_freq_bands__log': True})
-    #     trials_data = np.append(trials_data, extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.filt_l_freq,self.filt_h_freq,4), 'pow_freq_bands__log': True}), axis=1)
+    #     trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
+    #     trials_data = np.append(trials_data, extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq'],4), 'pow_freq_bands__log': True}), axis=1)
     #
     #     yt = labels+augmented_labels
     #     pca = PCA()

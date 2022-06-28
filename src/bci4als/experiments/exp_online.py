@@ -12,9 +12,9 @@ from src.bci4als.ml_model import MLModel
 
 class ExpOnline(OfflineExperiment):
 
-    def __init__(self, eeg: EEG, subject_models: List[MLModel], trial_length: float,
+    def __init__(self, eeg: EEG, subject_models: List[MLModel], trial_length: float, label_keys: tuple,
                  full_screen: bool = False, audio: bool = False):
-        super().__init__(eeg, trial_length=trial_length, full_screen=full_screen, audio=audio)
+        super().__init__(eeg, trial_length=trial_length, label_keys=label_keys, full_screen=full_screen, audio=audio)
 
         self.experiment_type = "ExpOnline"
         self.subject_models = subject_models

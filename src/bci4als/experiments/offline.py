@@ -14,7 +14,7 @@ from psychopy.hardware import keyboard
 
 class OfflineExperiment(Experiment):
 
-    def __init__(self, eeg: EEG, trial_length: float,
+    def __init__(self, eeg: EEG, trial_length: float, label_keys = (0, 1, 2, 3, 4),
                  next_length: float = 1.5, cue_length: float = 1, ready_length: float = 1,
                  full_screen: bool = False, audio: bool = False):
 
@@ -44,7 +44,7 @@ class OfflineExperiment(Experiment):
         self.audio_success_path = os.path.join(os.path.dirname(__file__), 'audio', f'success.mp3')
         self.visual_params: Dict[str, Any] = {'text_color': 'white', 'text_height': 48}
 
-        self.label_keys = (0, 1, 2) #MI labels fpr training
+        self.label_keys = label_keys
         self._init_labels(keys=self.label_keys)
 
         self.kb = keyboard.Keyboard()

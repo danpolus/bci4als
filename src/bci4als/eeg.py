@@ -7,19 +7,17 @@ import time
 
 class EEG:
 
-    def __init__(self, DSIparser, epoch_len_sec):
+    def __init__(self, DSIparser, projParams):
 
         self.DSIparser = DSIparser
-        self.epoch_len_sec = epoch_len_sec
-
-        # Other Params
-        self.sfreq = 300
-        self.chan_names = ['P3','C3', 'F3', 'Fz', 'F4', 'C4', 'P4', 'Cz','CM', 'A1', 'Fp1', 'Fp2' , 'T3', 'T5', 'O1', 'O2', 'X3' , 'X2', 'F7', 'F8', 'X1', 'A2', 'T6', 'T4', 'TRG']
+        self.epoch_len_sec = projParams['EegParams']['epoch_len_sec']
+        self.sfreq = projParams['EegParams']['sfreq']
+        self.chan_names = projParams['EegParams']['chan_names']
 
     def get_board_data(self):# -> ndarray:
         """The method returns the data from board and remove it"""
         if self.DSIparser is None:
-            return np.zeros((25, 600)) #just for debug
+            return np.zeros((len(self.chan_names), self.epoch_len_sec*self.sfreq)) #just for debug
         return self.DSIparser.get_epoch(self.epoch_len_sec)
 
     def get_board_names(self) -> List[str]:
