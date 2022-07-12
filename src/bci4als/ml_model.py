@@ -34,8 +34,9 @@ class MLModel:
         self.csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
         self.clf = None
 
-        self.train_acc = None
-        self.val_acc = None
+        self.train_acc = -1.0
+        self.val_acc = -1.0
+        self.test_acc = -1.0
 
         mpl.use('TkAgg')
         mne.set_log_level('warning')
@@ -110,6 +111,8 @@ class MLModel:
 
     def preprocess(self, epochs, fit_ar_flg):
         epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+        if not self.projParams['MiParams']['clean_epochs_ar_flg']:
+            return epochs, np.zeros(len(epochs), dtype=bool)
         if fit_ar_flg:
             self.ar.fit(epochs)
         reject_log = self.ar.get_reject_log(epochs)
@@ -170,6 +173,8 @@ class MLModel:
         pred_train_join = np.array([],dtype=int)
         for iFold in range(self.projParams['MiParams']['nFold']):
             validation_inx = trials_inx[range(foldSize*iFold, min(foldSize*(iFold+1), nTrials))]
+            if len(validation_inx) == 0:
+                continue
             train_inx = np.append(np.setdiff1d(trials_inx, validation_inx, assume_unique=True), augmented_trials_inx)
             X_train = all_trials[train_inx]
             X_val = all_trials[validation_inx]
@@ -203,6 +208,9 @@ class MLModel:
 
         return train_acc, val_acc
 
+    def calc_test_accuracy(self, eeg: EEG, trials, labels):
+        pred_labels, pred_prob = self.predict(trials, eeg)
+        self.test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
 
     # def svm_train(self, epochs, labels):
     #

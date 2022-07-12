@@ -5,6 +5,7 @@ import os
 import pickle
 from tkinter import filedialog
 from sklearn import metrics
+import csv
 
 from src.bci4als.ml_model import MLModel
 from src.bci4als.experiments.offline import OfflineExperiment
@@ -31,6 +32,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
         in_fn_list = []
         train_acc_list = []
         val_acc_list = []
+        test_acc_list = []
         in_dir = filedialog.askdirectory(title='Select trials folder', initialdir=projParams['FilesParams']['datasetsFp'])
 
         if sessType == SessionType.OfflineTrainCspMI:
@@ -57,8 +59,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
             if sessType == SessionType.OfflineTrainCspMI:
                 cleanTrainData = load_trials_from_file(fn)
-                trials=cleanTrainData['trials']
-                labels=cleanTrainData['labels']
+                trials, labels = select_classes(cleanTrainData['trials'], cleanTrainData['labels'], projParams['MiParams']['label_keys'])
                 if train_trials_percent < 100:
                     trials, labels = reduce_train_data(trials, labels, train_trials_percent)
                 model = train_save_model_source(trials,labels,eeg,session_directory,projParams)
@@ -71,23 +72,31 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
                 model.class_train(source_data, augmented_source_data, augSourceData['labels'], augSourceData['augmented_labels'], eeg)
                 # model.class_train(augmented_source_data, np.array([]), augSourceData['augmented_labels'], [], eeg) # accuracy of augmented data only
                 model.name = "model_"+str(len(source_data))+"trials_"+str(len(augmented_source_data))+"NFTaugmented"
+                # model.name = "model"
                 with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
                     pickle.dump(model, file)
 
             elif sessType == SessionType.TestAccuracy:
                 subject_models = load_session_models(session_directory)
                 TestsData = load_trials_from_file(fn)
+                trials, labels = select_classes(TestsData['trials'], TestsData['labels'], projParams['MiParams']['label_keys'])
                 print(fn+" :")
-                present_test_accuracy(subject_models, eeg, TestsData['trials'], TestsData['labels'])
-                model = subject_models[0] #just for train validation statistics
+                subject_models = present_test_accuracy(subject_models, eeg, trials, labels)
+                model = subject_models[0] #for test accuracy statistics
 
             train_acc_list.append(model.train_acc)
             val_acc_list.append(model.val_acc)
+            test_acc_list.append(model.test_acc)
 
         print()
         for i in range(len(in_fn_list)):
-            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}'.format(train_acc_list[i], val_acc_list[i]))
-        print('train acc mean: {0:0.2f}, validation acc mean: {1:0.2f}'.format(np.mean(train_acc_list), np.mean(val_acc_list)))
+            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(train_acc_list[i], val_acc_list[i], test_acc_list[i]))
+        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(train_acc_list), np.std(train_acc_list), np.mean(val_acc_list), np.std(val_acc_list), np.mean(test_acc_list), np.std(test_acc_list)))
+
+        with open(projParams['FilesParams']['classResults'],'w') as f:
+            writer = csv.writer(f,lineterminator='\r')
+            for i in range(len(in_fn_list)):
+                writer.writerow([train_acc_list[i], val_acc_list[i], test_acc_list[i]])
 
     return model
 
@@ -107,7 +116,6 @@ def train_save_model_source(trials, labels, eeg, session_directory, projParams):
     return model
 
 def reduce_train_data(trials, labels, train_trials_percent):
-
     reduced_trials = []
     reduced_labels = []
     for Label in np.unique(labels):
@@ -116,15 +124,14 @@ def reduce_train_data(trials, labels, train_trials_percent):
         idx = idx[0:int(np.round(idx.shape[0]*train_trials_percent/100))]
         reduced_trials += [trials[i] for i in idx]
         reduced_labels += [labels[i] for i in idx]
-
-    # #keep only one label
-    # Label = 0
-    # for i in sorted(range(len(labels)), reverse=True):
-    #     if labels[i] != Label:
-    #         labels.pop(i)
-    #         trials.pop(i)
-
     return reduced_trials, reduced_labels
+
+def select_classes(trials, labels, label_keys):
+    for i in reversed(range(len(labels))):
+        if labels[i] not in label_keys:
+            labels.pop(i)
+            trials.pop(i)
+    return trials, labels
 
 def load_trials_from_file(trials_mat_fp):
     #trials returned as a list of dataframes
@@ -167,6 +174,6 @@ def load_session_models(in_dir):
 def present_test_accuracy(subject_models, eeg, trials, labels):
     labels = np.array(labels)
     for model in subject_models:
-        pred_labels, pred_prob = model.predict(trials, eeg)
-        test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
-        print(model.name+'  test accuracy: {0:0.2f}'.format(test_acc))
+        model.calc_test_accuracy(eeg,trials,labels)
+        print(model.name+'  test accuracy: {0:0.2f}'.format(model.test_acc))
+    return subject_models
