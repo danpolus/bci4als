@@ -47,7 +47,7 @@ class MLModel:
         if self.type.lower() == 'csp_lda':
             epochs, bad_epochs = self.preprocess(epochs, False)
             data = self.csp.transform(epochs.get_data())
-            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
+            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
@@ -131,7 +131,7 @@ class MLModel:
             if augmented_data.any():
                 # augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False)
                 source_data = np.concatenate((source_data,augmented_data))
-            trials_data = extract_features(source_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
+            trials_data = extract_features(source_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
         else:
             raise NotImplementedError('The model type is not implemented yet')
 
