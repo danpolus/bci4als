@@ -31,7 +31,7 @@ class MLModel:
         self.type = self.projParams['MiParams']['model_type']
 
         self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
-        self.csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
+        self.csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space') #, component_order='alternate')
         self.clf = None
 
         self.train_acc = -1.0
@@ -59,7 +59,7 @@ class MLModel:
 
 
     def online_predict(self, data: NDArray, eeg: EEG):
-        trial = [pd.DataFrame(data.astype(np.float64))]
+        trial = [pd.DataFrame(np.transpose(data.astype(np.float64)))]
         pred, pred_prob = self.predict(trial,eeg)
         com_pred = DroneCommands.error
         if pred[0] == 0:
