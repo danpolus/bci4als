@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 from tkinter import messagebox
 from typing import List
+from typing import Dict, List, Any
+import os
+import time
 
 from .offline import OfflineExperiment
 from src.bci4als.eeg import EEG
@@ -18,19 +21,37 @@ class ExpOnline(OfflineExperiment):
 
         self.experiment_type = "ExpOnline"
         self.subject_models = subject_models
+        self.images_feedback_path: Dict[str, str] = {
+            'correct': os.path.join(os.path.dirname(__file__), 'images', 'correct.jpeg'),
+            'wrong': os.path.join(os.path.dirname(__file__), 'images', 'wrong.jpeg'),
+            'failed': os.path.join(os.path.dirname(__file__), 'images', 'failed.jpeg'),
+        }
+        self.feedback_length = 1
 
 
     def _show_feedback(self, trial_index, model):
+        win = self.window_params['main_window']
+
         pred_label, pred_prob = model.predict([pd.DataFrame(self.signalArray.T)], self.eeg)
         if pred_prob.max() > 0:
             if pred_label == self.labels[trial_index]:
                 msg = 'Correct!'
+                feedback_stim = visual.ImageStim(win, image=self.images_feedback_path['correct'], pos=[0, -50], size=[630,360])
+                print(msg)
             else:
                 msg = 'Wrong!  Predicted label is: {}'.format(pred_label[0])
-            print(msg)
+                print(msg)
+                feedback_stim = visual.ImageStim(win, image=self.images_feedback_path['wrong'], pos=[0, -50], size=[630,360])
         else:
-            print('bad signal, failed to predict')
+            msg = 'bad signal, failed to predict'
+            print(msg)
+            feedback_stim = visual.ImageStim(win, image=self.images_feedback_path['wrong'], pos=[0, -50], size=[630,360])
 
+        feedback_msg = visual.TextStim(win, msg, pos=[0, 100])
+        feedback_stim.draw()
+        feedback_msg.draw()
+        win.flip()
+        time.sleep(self.feedback_length)
 
     def run(self):
         global visual, core, event
