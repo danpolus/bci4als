@@ -28,10 +28,8 @@ class MLModel:
         self.projParams = getParams()
 
         self.name = model_name
-        self.type = self.projParams['MiParams']['model_type']
-
         self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
-        self.csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space') #, component_order='alternate')
+        self.decomposition = None
         self.clf = None
 
         self.train_acc = -1.0
@@ -44,16 +42,12 @@ class MLModel:
 
     def predict(self, trials: List[pd.DataFrame], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
-        if self.type.lower() == 'csp_lda':
-            epochs, bad_epochs = self.preprocess(epochs, False)
-            data = self.csp.transform(epochs.get_data())
-            data = extract_features(data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
-        else:
-            raise NotImplementedError('The model type is not implemented yet')
-
-        # Predict
-        pred = self.clf.predict(data)
-        pred_prob = self.clf.predict_proba(data)
+        epochs, bad_epochs = self.preprocess(epochs, False)
+        data = self.decompose(epochs)
+        trials_features = self.calc_features(data, eeg)
+        #Predict
+        pred = self.clf.predict(trials_features)
+        pred_prob = self.clf.predict_proba(trials_features)
         pred_prob[bad_epochs,:] = 0
         return pred, pred_prob
 
@@ -77,16 +71,12 @@ class MLModel:
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
-        if self.type.lower() == 'csp_lda':
-            epochs, bad_epochs = self.preprocess(epochs, True)
-            epochs = epochs.drop(bad_epochs, verbose=False)
-            labels = np.array(labels)[bad_epochs == False].tolist()
-            source_data = self.csp.fit_transform(epochs.get_data(), labels)
-        else:
-            raise NotImplementedError('The model type is not implemented yet')
+        epochs, bad_epochs = self.preprocess(epochs, True)
+        epochs = epochs.drop(bad_epochs, verbose=False)
+        labels = np.array(labels)[bad_epochs == False].tolist()
+        source_data = self.decompose(epochs, labels, True)
         pred_labels = self.class_train(source_data, np.array([]), labels, [], eeg)
-        if self.type.lower() == 'csp_lda':
-            return source_data, labels, pred_labels
+        return source_data, labels, pred_labels
 
 
     def convert2mne(self, trials: List[pd.DataFrame], eeg: EEG):
@@ -94,23 +84,21 @@ class MLModel:
         ch_names = eeg.get_board_names()
         ch_types = ['eeg'] * len(ch_names)
         info = mne.create_info(ch_names, eeg.sfreq, ch_types, verbose=False)
-
-        # convert data to mne.Epochs
+        #convert data to mne.Epochs
         trials: List[NDArray] = [t.to_numpy().T for t in trials]
         epochs_array: np.ndarray = np.stack(trials)
         epochs = mne.EpochsArray(epochs_array, info, verbose=False)
-
-        # set montage
+        #set montage
         montage = make_standard_montage('standard_1020')
         epochs.drop_channels(self.projParams['EegParams']['nonEEGchannels'])
         epochs.set_montage(montage,verbose=False)
         # epochs.plot(scalings = dict(eeg=3e1))
-
         return epochs
 
 
     def preprocess(self, epochs, fit_ar_flg):
         epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
+        # epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20)  # laplacian works badly. Needed for features other than CSP
         if not self.projParams['MiParams']['clean_epochs_ar_flg']:
             return epochs, np.zeros(len(epochs), dtype=bool)
         if fit_ar_flg:
@@ -123,25 +111,77 @@ class MLModel:
         return epochs, bad_epochs
 
 
+    def decompose(self, epochs, labels=None, fit_flg=False):
+        if fit_flg:
+            # if self.projParams['MiParams']['decomposition'] == 'CSP': # CSP ICA PCA None
+            self.decomposition = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
+            # self.decomposition.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
+            # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
+            return self.decomposition.fit_transform(epochs.get_data(), labels)
+        else:
+            return self.decomposition.transform(epochs.get_data())
+
+
+    def calc_features(self, epoched_data, eeg: EEG):
+
+        # #band/multiband power
+        # trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
+
+        #entropy/fractal
+        # #Renyi Entropy?
+        trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd']) #  app_entropy samp_entropy  higuchi_fd  katz_fd
+        # from entropy import sample_entropy, app_entropy, perm_entropy, katz_fd, higuchi_fd, detrended_fluctuation, lziv_complexity
+        # trials_features = np.empty(shape=(epoched_data.shape[0], epoched_data.shape[1]))
+        # for iTrial in range(epoched_data.shape[0]):
+        #     for iChan in range(epoched_data.shape[1]):
+        #         # trials_features[iTrial,iChan] = perm_entropy(epoched_data[iTrial, iChan, :], normalize=True)
+        #         # trials_features[iTrial,iChan] = lziv_complexity(epoched_data[iTrial, iChan, :], normalize=True) #requires quantization
+        #         trials_features[iTrial, iChan] = higuchi_fd(epoched_data[iTrial, iChan, :])  # higuchi_fd detrended_fluctuation #katz_fd app_entropy sample_entropy
+
+        # #AR
+        # from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+        # nARCoef = 4
+        # trials_features = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
+        # for iTrial in range(epoched_data.shape[0]):
+        #     for iChan in range(epoched_data.shape[1]):
+        #         AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
+        #         AutoRegRes = AutoRegModel.fit()
+        #         trials_features[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
+
+        # #MVAR
+        # from statsmodels.tsa.vector_ar.var_model import VAR
+        # nARCoef = 4
+        # trials_features = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
+        # for iTrial in range(epoched_data.shape[0]):
+        #     VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
+        #     VarRes = VarModel.fit(nARCoef)
+        #     trials_features[iTrial,:] = VarRes.params.flatten()
+
+        # #EMD IMF
+        # #https://emd.readthedocs.io/en/stable/   https://pypi.org/project/EMD-signal/
+
+        #trials_features = np.append(trials_features, trials_features_new, axis=1)
+
+        return trials_features
+
+
     def class_train(self, data, augmented_data, labels, augmented_labels, eeg: EEG):
 
-        if self.type.lower() == 'csp_lda':
-            self.clf = LinearDiscriminantAnalysis()
-            source_data: np.ndarray = data
-            if augmented_data.any():
-                # augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False)
-                source_data = np.concatenate((source_data,augmented_data))
-            trials_data = extract_features(source_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
-        else:
-            raise NotImplementedError('The model type is not implemented yet')
+        if augmented_data.any():
+            augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False) #needed for non-bandpower features
+            data = np.concatenate((data,augmented_data))
+        trials_features = self.calc_features(data, eeg)
+
+        # if self.projParams['MiParams']['classifier'] == 'LDA': # LDA SVM CNN
+        self.clf = LinearDiscriminantAnalysis()
 
         #cross validation
         # from sklearn.model_selection import cross_validate, KFold
-        # cv_results = cross_validate(self.clf, trials_data, labels, return_train_score=True, cv=KFold(n_splits=5, shuffle=True))
-        self.cross_valid(trials_data, labels, augmented_labels, False, False) #show confusion matrices
+        # cv_results = cross_validate(self.clf, trials_features, labels, return_train_score=True, cv=KFold(n_splits=5, shuffle=True))
+        self.cross_valid(trials_features, labels, augmented_labels, False, False) #show confusion matrices
         crossv_res = {'cv_train':[],'cv_val':[]}
         for i in range(self.projParams['MiParams']['nCV']):
-            train_acc, val_acc = self.cross_valid(trials_data, labels, augmented_labels)
+            train_acc, val_acc = self.cross_valid(trials_features, labels, augmented_labels)
             crossv_res['cv_train'] += [train_acc]
             crossv_res['cv_val'] += [val_acc]
         self.train_acc = np.mean(crossv_res['cv_train'])
@@ -149,8 +189,8 @@ class MLModel:
         print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, val acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.val_acc, np.std(crossv_res['cv_val'])))
 
         # fit transformer and classifier to data
-        self.clf.fit(trials_data, labels + augmented_labels)
-        pred_labels = self.clf.predict(trials_data)
+        self.clf.fit(trials_features, labels + augmented_labels)
+        pred_labels = self.clf.predict(trials_features)
         train_acc = metrics.balanced_accuracy_score(labels + augmented_labels, pred_labels)
         print('train acc all trials: {0:0.2f}'.format(train_acc))
         return pred_labels
@@ -208,13 +248,13 @@ class MLModel:
 
         return train_acc, val_acc
 
+
     def calc_test_accuracy(self, eeg: EEG, trials, labels):
         pred_labels, pred_prob = self.predict(trials, eeg)
         self.test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
 
+
     # def svm_train(self, epochs, labels):
-    #
-    #     from sklearn.pipeline import Pipeline
     #
     #     #preprocessing
     #     epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
@@ -257,34 +297,17 @@ class MLModel:
     #     plt.show(block=False)
     #     #https://mne.tools/stable/auto_tutorials/time-freq/20_sensors_time_frequency.html
     #
-    #
-    #     #CSP + LDA classifier
-    #     lda = LinearDiscriminantAnalysis()
-    #     csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], reg=None, log=True, norm_trace=False)
-    #     self.clf = Pipeline([('CSP', csp), ('LDA', lda)])  # Use scikit-learn Pipeline
-    #     trials_data = epochs.get_data()
-    #     #doi:10.1109/MSP.2008.4408441
-    #
-    #
     #     #many features + SVM classifier
     #     from sklearn.svm import SVC
     #     from sklearn.preprocessing import StandardScaler
-    #     from sklearn.pipeline import make_pipeline
+    #     from sklearn.pipeline import make_pipeline, Pipeline
     #     from sklearn.decomposition import PCA
     #     from sklearn.manifold import TSNE
     #     from mne.decoding import CSP
     #     # self.clf = make_pipeline(StandardScaler(), SVC(C=1, kernel='linear')) #regularizarion C >1. greater C for better generalization
+    #     # self.clf = Pipeline([('scaler', StandardScaler), ('svc', SVC)])
     #     self.clf = SVC(C=1, kernel='linear')
     #     #svm descision boundary visualization: https://scikit-learn.org/0.18/auto_examples/svm/plot_iris.html
-    #
-    #     trials_data = extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
-    #     trials_data = np.append(trials_data, extract_features(epochs.get_data(), sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq'],4), 'pow_freq_bands__log': True}), axis=1)
-    #     csp = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
-    #     source_data = csp.fit_transform(epochs.get_data(), labels+augmented_labels)
-    #     # csp.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
-    #     # csp.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
-    #     trials_data = extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.array([self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq']]), 'pow_freq_bands__log': True})
-    #     trials_data = np.append(trials_data, extract_features(source_data, sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': np.arange(self.projParams['MiParams']['l_freq'],self.projParams['MiParams']['h_freq'],4), 'pow_freq_bands__log': True}), axis=1)
     #
     #     yt = labels+augmented_labels
     #     pca = PCA()
@@ -304,8 +327,8 @@ class MLModel:
     #     plt.scatter(Xt[:,0], Xt[:,1], c=yt)
     #     plt.show(block=False)
     #
-    #
     #     #raw eeg + multi-layer perceptron
     #     from sklearn.neural_network import MLPClassifier
     #     self.clf = MLPClassifier(hidden_layer_sizes=(int(epochs.times.shape[0]/4), int(epochs.times.shape[0]/8), 40, 40, 20), verbose=True)
     #     trials_data = epochs.get_data().reshape((len(epochs),-1))
+    #
