@@ -124,53 +124,80 @@ class MLModel:
 
     def calc_features(self, epoched_data, eeg: EEG):
 
-        # #band/multiband power
+        #band/multiband power
         # trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
 
         #entropy/fractal
+        trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd'])  # app_entropy samp_entropy  higuchi_fd  katz_fd
         # #Renyi Entropy?
-        trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd']) #  app_entropy samp_entropy  higuchi_fd  katz_fd
         # from entropy import sample_entropy, app_entropy, perm_entropy, katz_fd, higuchi_fd, detrended_fluctuation, lziv_complexity
-        # trials_features = np.empty(shape=(epoched_data.shape[0], epoched_data.shape[1]))
+        # from scipy import stats, signal
+        # from statistics import median
+        # trials_features_new = np.empty(shape=(epoched_data.shape[0], epoched_data.shape[1]))
         # for iTrial in range(epoched_data.shape[0]):
         #     for iChan in range(epoched_data.shape[1]):
-        #         # trials_features[iTrial,iChan] = perm_entropy(epoched_data[iTrial, iChan, :], normalize=True)
-        #         # trials_features[iTrial,iChan] = lziv_complexity(epoched_data[iTrial, iChan, :], normalize=True) #requires quantization
-        #         trials_features[iTrial, iChan] = higuchi_fd(epoched_data[iTrial, iChan, :])  # higuchi_fd detrended_fluctuation #katz_fd app_entropy sample_entropy
+        #         # trials_features_new[iTrial,iChan] = perm_entropy(epoched_data[iTrial, iChan, :], normalize=True)
+        #         # trials_features_new[iTrial, iChan] = higuchi_fd(epoched_data[iTrial, iChan, :])  # higuchi_fd detrended_fluctuation #katz_fd app_entropy sample_entropy
+        #
+        #         data_proc = epoched_data[iTrial, iChan, :] #e2s Daniel
+        #         # data_proc= stats.zscore(epoched_data[iTrial, iChan, :]) # e2s Tomer
+        #         # data_proc = np.abs(signal.hilbert(epoched_data[iTrial, iChan, :])) #e2s2 Tomer
+        #         data_thresholded = data_proc > median(data_proc)
+        #         # data_thresholded = np.ediff1d(epoched_data[iTrial, iChan, :], to_begin=-1) >= 0  # https://www.hindawi.com/journals/mpe/2018/8692146/
+        #         trials_features_new[iTrial,iChan] = lziv_complexity(data_thresholded, normalize=True)
 
         # #AR
         # from statsmodels.tsa.ar_model import AutoReg, ar_select_order
         # nARCoef = 4
-        # trials_features = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
+        # trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
         # for iTrial in range(epoched_data.shape[0]):
         #     for iChan in range(epoched_data.shape[1]):
         #         AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
         #         AutoRegRes = AutoRegModel.fit()
-        #         trials_features[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
+        #         trials_features_new[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
 
         # #MVAR
         # from statsmodels.tsa.vector_ar.var_model import VAR
         # nARCoef = 4
-        # trials_features = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
+        # trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
         # for iTrial in range(epoched_data.shape[0]):
         #     VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
         #     VarRes = VarModel.fit(nARCoef)
-        #     trials_features[iTrial,:] = VarRes.params.flatten()
+        #     trials_features_new[iTrial,:] = VarRes.params.flatten()
 
         # #EMD IMF
         # #https://emd.readthedocs.io/en/stable/   https://pypi.org/project/EMD-signal/
 
-        #trials_features = np.append(trials_features, trials_features_new, axis=1)
+        # trials_features = np.append(trials_features, trials_features_new, axis=1)
 
         return trials_features
 
 
     def class_train(self, data, augmented_data, labels, augmented_labels, eeg: EEG):
 
-        if augmented_data.any():
-            augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False) #needed for non-bandpower features
-            data = np.concatenate((data,augmented_data))
-        trials_features = self.calc_features(data, eeg)
+        is_augment_features_noise = False
+        if is_augment_features_noise:
+            augmentation_factor = 3
+            variation_factor = 0.15
+            trials_features = self.calc_features(data, eeg)
+            uniq_labels = np.unique(labels)
+            n_aug_trials = int(np.ceil(trials_features.shape[0]/uniq_labels.size)*augmentation_factor)
+            augmented_features = np.empty(shape=[0,trials_features.shape[1]])
+            augmented_labels = []
+            for label in uniq_labels:
+                feturs_mean = np.mean(trials_features[labels == label, :], axis=0)
+                feturs_std = np.std(trials_features[labels == label, :], axis=0)
+                trials_features_new = np.random.normal(size=(n_aug_trials,trials_features.shape[1]))
+                trials_features_new = trials_features_new*feturs_std*(1+variation_factor) + feturs_mean
+                augmented_features = np.append(augmented_features, trials_features_new, axis=0)
+                augmented_labels = augmented_labels + (label*np.ones(n_aug_trials, dtype=int)).tolist()
+            trials_features = np.append(trials_features, augmented_features, axis=0)
+        else:
+            if augmented_data.any():
+                augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False) #needed for non-bandpower features
+                data = np.concatenate((data,augmented_data))
+            trials_features = self.calc_features(data, eeg)
+
 
         # if self.projParams['MiParams']['classifier'] == 'LDA': # LDA SVM CNN
         self.clf = LinearDiscriminantAnalysis()
