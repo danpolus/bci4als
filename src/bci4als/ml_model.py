@@ -1,22 +1,19 @@
 from typing import List
-import mne
-import pandas as pd
-from src.bci4als.eeg import EEG
-import numpy as np
-from mne.channels import make_standard_montage
-from mne_features.feature_extraction import extract_features
 from nptyping import NDArray
-from sklearn import metrics
+import pandas as pd
+import numpy as np
+import mne
+from mne import channels, decoding
+from mne_features.feature_extraction import extract_features
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from sklearn import clone
-from mne.decoding import CSP
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn import clone, metrics, discriminant_analysis, model_selection
 from autoreject import AutoReject
-
 import sys
 sys.path.append('../../../Drone_Project/')
+
 from projectParams import getParams, DroneCommands
+from src.bci4als.eeg import EEG
 
 class MLModel:
     """
@@ -28,21 +25,22 @@ class MLModel:
         self.projParams = getParams()
 
         self.name = model_name
-        self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
+        self.ar = None
         self.decomposition = None
         self.clf = None
 
         self.train_acc = -1.0
-        self.val_acc = -1.0
+        self.valid_acc = -1.0
         self.test_acc = -1.0
 
         mpl.use('TkAgg')
         mne.set_log_level('warning')
 
 
+    #get prediction from a trained model
     def predict(self, trials: List[pd.DataFrame], eeg: EEG):
         epochs = self.convert2mne(trials, eeg)
-        epochs, bad_epochs = self.preprocess(epochs, False)
+        epochs, bad_epochs = self.preprocess_pipeline(epochs)
         data = self.decompose(epochs)
         trials_features = self.calc_features(data, eeg)
         #Predict
@@ -69,14 +67,58 @@ class MLModel:
         return com_pred, pred_prob[0,:].max()
 
 
+    def calc_test_accuracy(self, eeg: EEG, trials, labels):
+        pred_labels, pred_prob = self.predict(trials, eeg)
+        self.test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
+
+
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
+        Sources_t = []
+        for iFold in range(self.projParams['MiParams']['nFold']+1): #last "fold" is for the full data
+            Sources_t.append({'train_source_data': np.array([]), 'train_labels': [], 'aug_source_data': np.array([]), 'aug_labels': [],
+                              'train_pred_labels': [], 'valid_source_data': np.array([]), 'valid_labels': [], 'valid_pred_labels': []})
+        Sources_t = self.split_folds_calc_source(Sources_t, trials, labels, eeg)
+        Sources_t = self.train_and_validate(Sources_t, eeg)
+        return Sources_t
+
+
+    #splits input trials to cv folds; extract sources for each fold; train model for source axraction on the whole input data
+    def split_folds_calc_source(self, Sources_t, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
+        skf = model_selection.StratifiedKFold(n_splits=self.projParams['MiParams']['nFold'], shuffle=True)
+        iFold = 0
+        for train_index, valid_index in skf.split(trials, labels):
+            Sources_t[iFold]['train_source_data'],Sources_t[iFold]['train_labels'] = self.pipeline_sources([trials[i] for i in train_index], [labels[i] for i in train_index], eeg, train_flg=True)
+            Sources_t[iFold]['valid_source_data'],Sources_t[iFold]['valid_labels'] = self.pipeline_sources([trials[i] for i in valid_index], [labels[i] for i in valid_index], eeg, train_flg=False)
+            iFold += 1
+        Sources_t[-1]['train_source_data'],Sources_t[-1]['train_labels'] = self.pipeline_sources(trials, labels, eeg, train_flg=True) #full data sources and training
+        return Sources_t
+
+
+    #calculate train and validation accuracy on cv folds; train model classifier of sources from the whole data
+    def train_and_validate(self, Sources_t, eeg: EEG):
+        #validtion accuracy
+        train_acc_list = [None] * self.projParams['MiParams']['nFold']
+        valid_acc_list = [None] * self.projParams['MiParams']['nFold']
+        for iFold in range(self.projParams['MiParams']['nFold']):
+            train_acc_list[iFold], Sources_t[iFold]['train_pred_labels'] = self.class_pipeline(Sources_t[iFold]['train_source_data'], Sources_t[iFold]['train_labels'], Sources_t[iFold]['aug_source_data'], Sources_t[iFold]['aug_labels'],  eeg, train_flg=True)
+            valid_acc_list[iFold], Sources_t[iFold]['valid_pred_labels'] = self.class_pipeline(Sources_t[iFold]['valid_source_data'], Sources_t[iFold]['valid_labels'], np.array([]), [], eeg, train_flg=False)
+        self.train_acc = np.mean(train_acc_list)
+        self.valid_acc = np.mean(valid_acc_list)
+        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}'.format(self.train_acc, np.std(train_acc_list), self.valid_acc, np.std(valid_acc_list)))
+        #full training
+        full_acc, Sources_t[-1]['train_pred_labels'] = self.class_pipeline(Sources_t[-1]['train_source_data'], Sources_t[-1]['train_labels'], Sources_t[-1]['aug_source_data'], Sources_t[-1]['aug_labels'], eeg, train_flg=True)
+        print('FULL TRAIN ACCURACY:   train {0:0.3f}'.format(full_acc))
+        return Sources_t
+
+
+    #preprocess, decompose
+    def pipeline_sources(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG, train_flg = False):
         epochs = self.convert2mne(trials, eeg)
-        epochs, bad_epochs = self.preprocess(epochs, True)
+        epochs, bad_epochs = self.preprocess_pipeline(epochs, train_flg)
         epochs = epochs.drop(bad_epochs, verbose=False)
         labels = np.array(labels)[bad_epochs == False].tolist()
-        source_data = self.decompose(epochs, labels, True)
-        pred_labels = self.class_train(source_data, np.array([]), labels, [], eeg)
-        return source_data, labels, pred_labels
+        source_data = self.decompose(epochs, labels, train_flg)
+        return source_data, labels
 
 
     def convert2mne(self, trials: List[pd.DataFrame], eeg: EEG):
@@ -89,32 +131,36 @@ class MLModel:
         epochs_array: np.ndarray = np.stack(trials)
         epochs = mne.EpochsArray(epochs_array, info, verbose=False)
         #set montage
-        montage = make_standard_montage('standard_1020')
+        montage = channels.make_standard_montage('standard_1020')
         epochs.drop_channels(self.projParams['EegParams']['nonEEGchannels'])
         epochs.set_montage(montage,verbose=False)
         # epochs.plot(scalings = dict(eeg=3e1))
+        # epochs.plot_psd()
         return epochs
 
 
-    def preprocess(self, epochs, fit_ar_flg):
+    #filter, clean atrifacts
+    def preprocess_pipeline(self, epochs, fit_ar_flg=False):
         epochs.filter(l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], skip_by_annotation='edge', pad='edge', verbose=False) #band-pass filter
         # epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20)  # laplacian works badly. Needed for features other than CSP
-        if not self.projParams['MiParams']['clean_epochs_ar_flg']:
-            return epochs, np.zeros(len(epochs), dtype=bool)
-        if fit_ar_flg:
-            self.ar.fit(epochs)
-        reject_log = self.ar.get_reject_log(epochs)
-        #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
-        bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.projParams['MiParams']['max_bad_chan_in_epoch'])
-        # bad_epochs = reject_log.bad_epochs
-        # epochs = self.ar.transform(epochs)
+        if self.projParams['MiParams']['clean_epochs_ar_flg']:
+            if fit_ar_flg:
+                self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
+                self.ar.fit(epochs)
+            reject_log = self.ar.get_reject_log(epochs)
+            #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
+            bad_epochs = np.logical_or(reject_log.bad_epochs, np.sum(reject_log.labels == 1,axis=1) > self.projParams['MiParams']['max_bad_chan_in_epoch'])
+            # bad_epochs = reject_log.bad_epochs
+            # epochs = self.ar.transform(epochs)
+        else:
+            bad_epochs = np.zeros(len(epochs), dtype=bool)
         return epochs, bad_epochs
 
 
     def decompose(self, epochs, labels=None, fit_flg=False):
         if fit_flg:
             # if self.projParams['MiParams']['decomposition'] == 'CSP': # CSP ICA PCA None
-            self.decomposition = CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
+            self.decomposition = decoding.CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
             # self.decomposition.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
             # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
             return self.decomposition.fit_transform(epochs.get_data(), labels)
@@ -173,56 +219,64 @@ class MLModel:
         return trials_features
 
 
-    def class_train(self, data, augmented_data, labels, augmented_labels, eeg: EEG):
-
-        is_augment_features_noise = False
-        if is_augment_features_noise:
-            augmentation_factor = 3
-            variation_factor = 0.15
-            trials_features = self.calc_features(data, eeg)
-            uniq_labels = np.unique(labels)
-            n_aug_trials = int(np.ceil(trials_features.shape[0]/uniq_labels.size)*augmentation_factor)
-            augmented_features = np.empty(shape=[0,trials_features.shape[1]])
-            augmented_labels = []
-            for label in uniq_labels:
-                feturs_mean = np.mean(trials_features[labels == label, :], axis=0)
-                feturs_std = np.std(trials_features[labels == label, :], axis=0)
-                trials_features_new = np.random.normal(size=(n_aug_trials,trials_features.shape[1]))
-                trials_features_new = trials_features_new*feturs_std*(1+variation_factor) + feturs_mean
-                augmented_features = np.append(augmented_features, trials_features_new, axis=0)
-                augmented_labels = augmented_labels + (label*np.ones(n_aug_trials, dtype=int)).tolist()
-            trials_features = np.append(trials_features, augmented_features, axis=0)
-        else:
-            if augmented_data.any():
-                augmented_data = mne.filter.filter_data(augmented_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False) #needed for non-bandpower features
-                data = np.concatenate((data,augmented_data))
-            trials_features = self.calc_features(data, eeg)
+    # simple features augmentation, by adding gausian noise to their values
+    def augment_features_noise(self, trials_features, labels):
+        uniq_labels = np.unique(labels)
+        n_aug_trials = int(np.ceil(trials_features.shape[0] / uniq_labels.size) * self.projParams['MiParams']['feature_noise_aug_factor'])
+        augmented_features = np.empty(shape=[0, trials_features.shape[1]])
+        augmented_labels = []
+        for label in uniq_labels:
+            feturs_mean = np.mean(trials_features[labels == label, :], axis=0)
+            feturs_std = np.std(trials_features[labels == label, :], axis=0)
+            trials_features_new = np.random.normal(size=(n_aug_trials, trials_features.shape[1]))
+            trials_features_new = trials_features_new * feturs_std * (1 + self.projParams['MiParams']['feature_noise_variation_factor']) + feturs_mean
+            augmented_features = np.append(augmented_features, trials_features_new, axis=0)
+            augmented_labels = augmented_labels + (label * np.ones(n_aug_trials, dtype=int)).tolist()
+        return augmented_features, augmented_labels
 
 
-        # if self.projParams['MiParams']['classifier'] == 'LDA': # LDA SVM CNN
-        self.clf = LinearDiscriminantAnalysis()
+    # etract features, train classifier, predict labels. Also consider augmented data when training.
+    # no traing mode: just extract features and predict
+    def class_pipeline(self, train_data, train_labels, aug_train_data, aug_train_labels, eeg: EEG, train_flg):
 
-        #cross validation
-        # from sklearn.model_selection import cross_validate, KFold
-        # cv_results = cross_validate(self.clf, trials_features, labels, return_train_score=True, cv=KFold(n_splits=5, shuffle=True))
-        self.cross_valid(trials_features, labels, augmented_labels, False, False) #show confusion matrices
-        crossv_res = {'cv_train':[],'cv_val':[]}
-        for i in range(self.projParams['MiParams']['nCV']):
-            train_acc, val_acc = self.cross_valid(trials_features, labels, augmented_labels)
-            crossv_res['cv_train'] += [train_acc]
-            crossv_res['cv_val'] += [val_acc]
-        self.train_acc = np.mean(crossv_res['cv_train'])
-        self.val_acc = np.mean(crossv_res['cv_val'])
-        print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, val acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.val_acc, np.std(crossv_res['cv_val'])))
+        #calculate features
+        train_features = self.calc_features(train_data, eeg)
+        if train_flg:
+            aug_train_features = np.array([])
+            if self.projParams['MiParams']['feature_noise_aug_factor'] > 0:
+                aug_train_features, aug_train_labels = self.augment_features_noise(train_features,train_labels)
+            elif aug_train_data.any():
+                aug_train_data = mne.filter.filter_data(aug_train_data, l_freq=self.projParams['MiParams']['l_freq'], h_freq=self.projParams['MiParams']['h_freq'], sfreq=eeg.sfreq, pad='edge', verbose=False)  # needed for non-bandpower features
+                aug_train_features = self.calc_features(aug_train_data, eeg)
+            if aug_train_features.any():
+                train_features = np.append(train_features, aug_train_features, axis=0)
 
-        # fit transformer and classifier to data
-        self.clf.fit(trials_features, labels + augmented_labels)
-        pred_labels = self.clf.predict(trials_features)
-        train_acc = metrics.balanced_accuracy_score(labels + augmented_labels, pred_labels)
-        print('train acc all trials: {0:0.2f}'.format(train_acc))
-        return pred_labels
+            #fit model
+            # if self.projParams['MiParams']['classifier'] == 'LDA': # LDA SVM CNN
+            self.clf = discriminant_analysis.LinearDiscriminantAnalysis()
+
+            # #local cross validation
+            # # cv_results = model_selection.cross_validate(self.clf, train_features, train_labels+aug_train_labels, return_train_score=True, cv=model_selection.StratifiedKFold(n_splits=self.projParams['MiParams']['nFold'], shuffle=True))
+            # self.cross_valid(train_features, train_labels, aug_train_labels, False, False) #show confusion matrices
+            # crossv_res = {'cv_train':[],'cv_valid':[]}
+            # for i in range(self.projParams['MiParams']['nCV']):
+            #     train_acc, valid_acc = self.cross_valid(train_features, train_labels, aug_train_labels)
+            #     crossv_res['cv_train'] += [train_acc]
+            #     crossv_res['cv_valid'] += [valid_acc]
+            # self.train_acc = np.mean(crossv_res['cv_train'])
+            # self.valid_acc = np.mean(crossv_res['cv_valid'])
+            # print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, valid acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.valid_acc, np.std(crossv_res['cv_valid'])))
+
+            train_labels = train_labels+aug_train_labels
+            self.clf.fit(train_features, train_labels)
+
+        #predict train+augmented labels
+        pred_labels = self.clf.predict(train_features).tolist()
+        acc = metrics.balanced_accuracy_score(train_labels, pred_labels)
+        return acc, pred_labels
 
 
+    # cross-validation only ant the classification stage (has leakage)
     def cross_valid(self, all_trials, labels, augmented_labels, plot_flg=False, verbose_flg=False):
 
         nTrials = len(labels)
@@ -276,11 +330,7 @@ class MLModel:
         return train_acc, val_acc
 
 
-    def calc_test_accuracy(self, eeg: EEG, trials, labels):
-        pred_labels, pred_prob = self.predict(trials, eeg)
-        self.test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
-
-
+    #debug
     # def svm_train(self, epochs, labels):
     #
     #     #preprocessing

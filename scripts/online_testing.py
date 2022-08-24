@@ -15,9 +15,9 @@ def online_experiment(eeg):
     subject_models = load_session_models(in_dir)
     exp = ExpOnline(eeg=eeg, subject_models=subject_models, trial_length=eeg.epoch_len_sec, label_keys=projParams['MiParams']['label_keys'], full_screen=projParams['MiParams']['full_screen'], audio=projParams['MiParams']['audio'])
     trials, labels = exp.run()
-    online_test_data = {'trials':np.stack(trials), 'labels':labels}
+    Trials_t = {'test_trials':np.stack(trials), 'test_labels':labels}
     session_directory = exp.session_directory
-    savemat(session_directory+"\\"+projParams['FilesParams']['onlineTestDataFn'], online_test_data)
+    savemat(session_directory+"\\"+projParams['FilesParams']['onlineTestDataFn'], {'Trials_t':Trials_t})
     for model in subject_models:
         with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
             pickle.dump(model, file)

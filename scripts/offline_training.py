@@ -4,7 +4,6 @@ from scipy.io import savemat, loadmat
 import os
 import pickle
 from tkinter import filedialog
-from sklearn import metrics
 import csv
 
 from src.bci4als.ml_model import MLModel
@@ -19,19 +18,19 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
     if sessType == SessionType.OfflineExpMI:
         exp = OfflineExperiment(eeg=eeg, trial_length=eeg.epoch_len_sec, label_keys=projParams['MiParams']['label_keys'], full_screen=projParams['MiParams']['full_screen'], audio=projParams['MiParams']['audio'])
         trials, labels = exp.run()
-        train_data = {'trials':np.stack(trials), 'labels':labels}
+        Trials_t = {'train_trials':np.stack(trials), 'train_labels':labels, 'train_pred_labels':[]}
         session_directory = exp.session_directory
-        savemat(session_directory+"\\"+projParams['FilesParams']['trainDataFn'], train_data)
-        model = train_save_model_source(trials,labels,eeg,session_directory,projParams)
+        savemat(session_directory+"\\"+projParams['FilesParams']['trainDataFn'], {'Trials_t':Trials_t})
+        model = train_save_model_source(trials, labels, eeg, session_directory, projParams)
         if train_trials_percent < 100:
             trials, labels = reduce_train_data(train_data, labels, train_trials_percent)
-            model = train_save_model_source(trials,labels,eeg,session_directory,projParams)
+            model = train_save_model_source(trials,labels, eeg, session_directory, projParams)
 
     elif sessType == SessionType.OfflineTrainCspMI or sessType == SessionType.OfflineTrainLdaMI or sessType == SessionType.TestAccuracy:
 
         in_fn_list = []
         train_acc_list = []
-        val_acc_list = []
+        valid_acc_list = []
         test_acc_list = []
         in_dir = filedialog.askdirectory(title='Select trials folder', initialdir=projParams['FilesParams']['datasetsFp'])
 
@@ -56,47 +55,47 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
         for fn in in_fn_list:
             session_directory = os.path.dirname(fn)
+            trials_mat = loadmat(fn, simplify_cells=True)
 
             if sessType == SessionType.OfflineTrainCspMI:
-                cleanTrainData = load_trials_from_file(fn)
-                trials, labels = select_classes(cleanTrainData['trials'], cleanTrainData['labels'], projParams['MiParams']['label_keys'])
+                trials, labels = trials_labels_to_lists(trials_mat['Trials_t']['train_trials'], trials_mat['Trials_t']['train_labels'])
+                trials, labels = select_classes(trials, labels, projParams['MiParams']['label_keys'])
                 if train_trials_percent < 100:
                     trials, labels = reduce_train_data(trials, labels, train_trials_percent)
-                model = train_save_model_source(trials,labels,eeg,session_directory,projParams)
+                model = train_save_model_source(trials, labels, eeg, session_directory,projParams)
 
             elif sessType == SessionType.OfflineTrainLdaMI:
                 model = pickle.load(open(session_directory+"\\"+projParams['FilesParams']['cspFittedModelName'], 'rb')) #load model
-                augSourceData = load_trials_from_file(fn)
-                source_data = np.stack([t.to_numpy().T for t in augSourceData['trials']])
-                augmented_source_data = np.stack([t.to_numpy().T for t in augSourceData['augmented_trials']])
-                model.class_train(source_data, augmented_source_data, augSourceData['labels'], augSourceData['augmented_labels'], eeg)
-                # model.class_train(augmented_source_data, np.array([]), augSourceData['augmented_labels'], [], eeg) # accuracy of augmented data only
-                model.name = "model_"+str(len(source_data))+"trials_"+str(len(augmented_source_data))+"NFTaugmented"
-                # model.name = "model"
+                for iFold in range(len(trials_mat['Sources_t'])):
+                    trials_mat['Sources_t'][iFold]['train_labels'] = trials_mat['Sources_t'][iFold]['train_labels'].tolist()
+                    trials_mat['Sources_t'][iFold]['aug_labels'] = trials_mat['Sources_t'][iFold]['aug_labels'].tolist()
+                    trials_mat['Sources_t'][iFold]['valid_labels'] = trials_mat['Sources_t'][iFold]['valid_labels'].tolist()
+                model.train_and_validate(trials_mat['Sources_t'], eeg)
+                # model.train_and_validate(augmented_source_data, augSourceData['augmented_labels'], [], [], valid_source_data, augSourceData['valid_labels'], eeg) # accuracy of augmented data only
                 with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
                     pickle.dump(model, file)
 
             elif sessType == SessionType.TestAccuracy:
                 subject_models = load_session_models(session_directory)
-                TestsData = load_trials_from_file(fn)
-                trials, labels = select_classes(TestsData['trials'], TestsData['labels'], projParams['MiParams']['label_keys'])
+                trials, labels = trials_labels_to_lists(trials_mat['Trials_t']['test_trials'], trials_mat['Trials_t']['test_labels'])
+                trials, labels = select_classes(trials, labels, projParams['MiParams']['label_keys'])
                 print(fn+" :")
                 subject_models = present_test_accuracy(subject_models, eeg, trials, labels)
                 model = subject_models[0] #for test accuracy statistics
 
             train_acc_list.append(model.train_acc)
-            val_acc_list.append(model.val_acc)
+            valid_acc_list.append(model.valid_acc)
             test_acc_list.append(model.test_acc)
 
         print()
         for i in range(len(in_fn_list)):
-            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(train_acc_list[i], val_acc_list[i], test_acc_list[i]))
-        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(train_acc_list), np.std(train_acc_list), np.mean(val_acc_list), np.std(val_acc_list), np.mean(test_acc_list), np.std(test_acc_list)))
+            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(train_acc_list[i], valid_acc_list[i], test_acc_list[i]))
+        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(train_acc_list), np.std(train_acc_list), np.mean(valid_acc_list), np.std(valid_acc_list), np.mean(test_acc_list), np.std(test_acc_list)))
 
         with open(projParams['FilesParams']['classResults'],'w') as f:
             writer = csv.writer(f,lineterminator='\r')
             for i in range(len(in_fn_list)):
-                writer.writerow([train_acc_list[i], val_acc_list[i], test_acc_list[i]])
+                writer.writerow([train_acc_list[i], valid_acc_list[i], test_acc_list[i]])
 
     return model
 
@@ -105,12 +104,11 @@ def train_save_model_source(trials, labels, eeg, session_directory, projParams):
         model = MLModel(model_name=projParams['FilesParams']['cspFittedModelName'][0:-4])
     else:
         model = MLModel(model_name="model_"+str(len(trials))+"trials")
-    source_data, labels, pred_labels = model.full_offline_training(trials=trials, labels=labels, eeg=eeg)
-    source_data_mat = {'trials':np.transpose(source_data,(0,2,1)), 'labels':labels, 'pred_labels':pred_labels}
+    Sources_t = model.full_offline_training(trials, labels, eeg)
     if projParams['FilesParams']['sourceDataFn'] != None:
-        savemat(session_directory+"\\"+projParams['FilesParams']['sourceDataFn'], source_data_mat)
+        savemat(session_directory+"\\"+projParams['FilesParams']['sourceDataFn'],  {'Sources_t': Sources_t})
     else:
-        savemat(session_directory + "\\source_data_"+str(len(trials))+"trials.mat", source_data_mat)
+        savemat(session_directory + "\\source_data_"+str(len(trials))+"trials.mat",  {'Sources_t': Sources_t})
     with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
         pickle.dump(model, file)
     return model
@@ -133,34 +131,13 @@ def select_classes(trials, labels, label_keys):
             trials.pop(i)
     return trials, labels
 
-def load_trials_from_file(trials_mat_fp):
-    #trials returned as a list of dataframes
-
-    # tr = pickle.load(open(session_directory + "1 Daniel50\\trials.pickle", 'rb'))
-    # ch_names = tr[0].columns
-    # trials_mat_fp = session_directory + "1 Daniel50\\augmented_train_data_3cond.mat"
-    # trials_mat_fp = filedialog.askopenfilename(title='Select trials file', initialdir=session_directory, filetypes=[("mat files", "*.mat")])
-
-    train_struct_names = ['', 'train_data_', 'test_']
-    recorded_trials = loadmat(trials_mat_fp)
-
-    def read_trials_labels(recorded_trials,trials_name,labels_name):
-        trials = []
-        labels =[]
-        # ch_names = eeg.get_board_names()
-        if trials_name in recorded_trials and recorded_trials[trials_name].any():
-            for iTrl in range(recorded_trials[trials_name].shape[0]):
-                trials.append(pd.DataFrame(recorded_trials[trials_name][iTrl,:,:])) #, columns=ch_names))
-            labels = recorded_trials[labels_name][0].tolist()
-        return trials, labels
-
-    for struct_name in train_struct_names:
-        trials, labels = read_trials_labels(recorded_trials, struct_name+'trials', struct_name+'labels')
-        if len(labels) > 0:
-            break
-    augmented_trials, augmented_labels = read_trials_labels(recorded_trials, 'augmented_data_trials', 'augmented_data_labels')
-    TrialsData = {'trials':trials, 'labels':labels, 'augmented_trials':augmented_trials, 'augmented_labels':augmented_labels}
-    return TrialsData
+def trials_labels_to_lists(trials_nd, labels_nd):
+    # ch_names = eeg.get_board_names()
+    trials = []
+    for iTrl in range(trials_nd.shape[0]):
+        trials.append(pd.DataFrame(trials_nd[iTrl,:,:])) #, columns=ch_names))
+    labels = labels_nd.tolist()
+    return trials, labels
 
 def load_session_models(in_dir):
     subject_models = []
