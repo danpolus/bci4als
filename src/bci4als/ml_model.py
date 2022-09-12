@@ -29,9 +29,7 @@ class MLModel:
         self.decomposition = None
         self.clf = None
 
-        self.train_acc = -1.0
-        self.valid_acc = -1.0
-        self.test_acc = -1.0
+        self.acc = {'train_av':-1.0, 'train_std':0, 'valid_av':-1.0, 'valid_std':0, 'test':-1.0}
 
         mpl.use('TkAgg')
         mne.set_log_level('warning')
@@ -69,7 +67,7 @@ class MLModel:
 
     def calc_test_accuracy(self, eeg: EEG, trials, labels):
         pred_labels, pred_prob = self.predict(trials, eeg)
-        self.test_acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
+        self.acc['test'] = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
 
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
@@ -102,9 +100,11 @@ class MLModel:
         for iFold in range(self.projParams['MiParams']['nFold']):
             train_acc_list[iFold], Sources_t[iFold]['train_pred_labels'] = self.class_pipeline(Sources_t[iFold]['train_source_data'], Sources_t[iFold]['train_labels'], Sources_t[iFold]['aug_source_data'], Sources_t[iFold]['aug_labels'],  eeg, train_flg=True)
             valid_acc_list[iFold], Sources_t[iFold]['valid_pred_labels'] = self.class_pipeline(Sources_t[iFold]['valid_source_data'], Sources_t[iFold]['valid_labels'], np.array([]), [], eeg, train_flg=False)
-        self.train_acc = np.mean(train_acc_list)
-        self.valid_acc = np.mean(valid_acc_list)
-        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}'.format(self.train_acc, np.std(train_acc_list), self.valid_acc, np.std(valid_acc_list)))
+        self.acc['train_av'] = np.mean(train_acc_list)
+        self.acc['train_std'] = np.std(train_acc_list)
+        self.acc['valid_av'] = np.mean(valid_acc_list)
+        self.acc['valid_std'] = np.std(valid_acc_list)
+        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}'.format(self.acc['train_av'], self.acc['train_std'], self.acc['valid_av'], self.acc['valid_std']))
         #full training
         full_acc, Sources_t[-1]['train_pred_labels'] = self.class_pipeline(Sources_t[-1]['train_source_data'], Sources_t[-1]['train_labels'], Sources_t[-1]['aug_source_data'], Sources_t[-1]['aug_labels'], eeg, train_flg=True)
         print('FULL TRAIN ACCURACY:   train {0:0.3f}'.format(full_acc))
@@ -263,9 +263,11 @@ class MLModel:
             #     train_acc, valid_acc = self.cross_valid(train_features, train_labels, aug_train_labels)
             #     crossv_res['cv_train'] += [train_acc]
             #     crossv_res['cv_valid'] += [valid_acc]
-            # self.train_acc = np.mean(crossv_res['cv_train'])
-            # self.valid_acc = np.mean(crossv_res['cv_valid'])
-            # print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, valid acc: {2:0.2f}+-{3:0.3f}'.format(self.train_acc, np.std(crossv_res['cv_train']),self.valid_acc, np.std(crossv_res['cv_valid'])))
+            # self.acc['train_av'] = np.mean(crossv_res['cv_train'])
+            # self.acc['train_std'] = np.std(crossv_res['cv_train'])
+            # self.acc['valid_av'] = np.mean(crossv_res['cv_valid'])
+            # self.acc['valid_std'] = np.std(crossv_res['cv_valid'])
+            # print('multiple CV:   train acc: {0:0.2f}+-{1:0.3f}, valid acc: {2:0.2f}+-{3:0.3f}'.format(self.acc['train_av'], self.acc['train_std'], self.acc['valid_av'], self.acc['valid_std']))
 
             train_labels = train_labels+aug_train_labels
             self.clf.fit(train_features, train_labels)

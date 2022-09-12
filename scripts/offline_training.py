@@ -29,9 +29,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
     elif sessType == SessionType.OfflineTrainCspMI or sessType == SessionType.OfflineTrainLdaMI or sessType == SessionType.TestAccuracy:
 
         in_fn_list = []
-        train_acc_list = []
-        valid_acc_list = []
-        test_acc_list = []
+        acc_lists = {'train_acc':[], 'train_acc_std':[], 'valid_acc':[], 'valid_acc_std':[], 'test_acc':[]}
         in_dir = filedialog.askdirectory(title='Select trials folder', initialdir=projParams['FilesParams']['datasetsFp'])
 
         if sessType == SessionType.OfflineTrainCspMI:
@@ -66,6 +64,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
 
             elif sessType == SessionType.OfflineTrainLdaMI:
                 model = pickle.load(open(session_directory+"\\"+projParams['FilesParams']['cspFittedModelName'], 'rb')) #load model
+                model.projParams = projParams
                 for iFold in range(len(trials_mat['Sources_t'])):
                     trials_mat['Sources_t'][iFold]['train_labels'] = trials_mat['Sources_t'][iFold]['train_labels'].tolist()
                     trials_mat['Sources_t'][iFold]['aug_labels'] = trials_mat['Sources_t'][iFold]['aug_labels'].tolist()
@@ -83,19 +82,21 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
                 subject_models = present_test_accuracy(subject_models, eeg, trials, labels)
                 model = subject_models[0] #for test accuracy statistics
 
-            train_acc_list.append(model.train_acc)
-            valid_acc_list.append(model.valid_acc)
-            test_acc_list.append(model.test_acc)
+            acc_lists['train_acc'].append(model.acc['train_av'])
+            acc_lists['train_acc_std'].append(model.acc['train_std'])
+            acc_lists['valid_acc'].append(model.acc['valid_av'])
+            acc_lists['valid_acc_std'].append(model.acc['valid_std'])
+            acc_lists['test_acc'].append(model.acc['test'])
 
         print()
         for i in range(len(in_fn_list)):
-            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(train_acc_list[i], valid_acc_list[i], test_acc_list[i]))
-        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(train_acc_list), np.std(train_acc_list), np.mean(valid_acc_list), np.std(valid_acc_list), np.mean(test_acc_list), np.std(test_acc_list)))
+            print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(acc_lists['train_acc'][i], acc_lists['valid_acc'][i], acc_lists['test_acc'][i]))
+        print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(acc_lists['train_acc']), np.std(acc_lists['train_acc']), np.mean(acc_lists['valid_acc']), np.std(acc_lists['valid_acc']), np.mean(acc_lists['test_acc']), np.std(acc_lists['test_acc'])))
 
         with open(projParams['FilesParams']['classResults'],'w') as f:
             writer = csv.writer(f,lineterminator='\r')
             for i in range(len(in_fn_list)):
-                writer.writerow([train_acc_list[i], valid_acc_list[i], test_acc_list[i]])
+                writer.writerow([acc_lists['train_acc'][i], acc_lists['valid_acc'][i], acc_lists['test_acc'][i], acc_lists['train_acc_std'][i], acc_lists['valid_acc_std'][i]])
 
     return model
 
@@ -152,5 +153,5 @@ def present_test_accuracy(subject_models, eeg, trials, labels):
     labels = np.array(labels)
     for model in subject_models:
         model.calc_test_accuracy(eeg,trials,labels)
-        print(model.name+'  test accuracy: {0:0.2f}'.format(model.test_acc))
+        print(model.name+'  test accuracy: {0:0.2f}'.format(model.acc['test']))
     return subject_models
