@@ -67,7 +67,9 @@ class MLModel:
 
     def calc_test_accuracy(self, eeg: EEG, trials, labels):
         pred_labels, pred_prob = self.predict(trials, eeg)
-        self.acc['test'] = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
+        acc = metrics.balanced_accuracy_score(labels[np.max(pred_prob,axis=1)>0], pred_labels[np.max(pred_prob,axis=1)>0])
+        pe = 1/len(self.projParams['MiParams']['label_keys'])
+        self.acc['test'] = (acc-pe)/(1-pe) #kappa
 
 
     def full_offline_training(self, trials: List[pd.DataFrame], labels: List[int], eeg: EEG):
@@ -275,6 +277,8 @@ class MLModel:
         #predict train+augmented labels
         pred_labels = self.clf.predict(train_features).tolist()
         acc = metrics.balanced_accuracy_score(train_labels, pred_labels)
+        pe = 1/len(self.projParams['MiParams']['label_keys'])
+        acc = (acc-pe)/(1-pe) #kappa
         return acc, pred_labels
 
 
@@ -314,8 +318,8 @@ class MLModel:
             pred_train_join = np.append(pred_train_join,pred_train)
             pred_val_join = np.append(pred_val_join,pred_val)
 
-        train_acc = metrics.balanced_accuracy_score(y_train_join, pred_train_join)
-        val_acc = metrics.balanced_accuracy_score(y_val_join, pred_val_join)
+        train_acc = metrics.balanced_accuracy_score(y_train_join, pred_train_join) #not kappa
+        val_acc = metrics.balanced_accuracy_score(y_val_join, pred_val_join) #not kappa
         if verbose_flg:
             print('train accuracy score: {0:0.2f}'.format(train_acc))
             print('validation accuracy score: {0:0.2f}'.format(val_acc))
