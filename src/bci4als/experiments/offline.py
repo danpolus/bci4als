@@ -16,7 +16,7 @@ from psychopy.hardware import keyboard
 class OfflineExperiment(Experiment):
 
     def __init__(self, eeg: EEG, trial_length: float, label_keys = (0, 1, 2, 3, 4),
-                 next_length: float = 1, cue_length: float = 1, ready_length: float = 1,
+                 cue_length: float = 1.5, ready_length: float = 1,
                  full_screen: bool = False, audio: bool = False):
 
         super().__init__(eeg)
@@ -27,7 +27,6 @@ class OfflineExperiment(Experiment):
 
         # trial times
         self.cue_length: float = cue_length
-        self.next_length: float = next_length
         self.ready_length: float = ready_length
         self.trial_length: float = trial_length
 

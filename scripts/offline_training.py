@@ -23,8 +23,8 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
         savemat(session_directory+"\\"+projParams['FilesParams']['trainDataFn'], {'Trials_t':Trials_t})
         model = train_save_model_source(trials, labels, eeg, session_directory, projParams)
         if train_trials_percent < 100:
-            trials, labels = reduce_train_data(train_data, labels, train_trials_percent)
-            model = train_save_model_source(trials,labels, eeg, session_directory, projParams)
+            trials, labels = reduce_train_data(trials, labels, train_trials_percent)
+            model = train_save_model_source(trials, labels, eeg, session_directory, projParams)
 
     elif sessType == SessionType.OfflineTrainCspMI or sessType == SessionType.OfflineTrainLdaMI or sessType == SessionType.TestAccuracy:
 

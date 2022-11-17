@@ -87,6 +87,10 @@ class MLModel:
         skf = model_selection.StratifiedKFold(n_splits=self.projParams['MiParams']['nFold'], shuffle=True)
         iFold = 0
         for train_index, valid_index in skf.split(trials, labels):
+            if self.projParams['MiParams']['inverseCV']: #inverse cross-validation. train on 1 fold, test on k-1 folds
+                tmp = valid_index
+                valid_index = train_index
+                train_index = tmp
             Sources_t[iFold]['train_source_data'],Sources_t[iFold]['train_labels'] = self.pipeline_sources([trials[i] for i in train_index], [labels[i] for i in train_index], eeg, train_flg=True)
             Sources_t[iFold]['valid_source_data'],Sources_t[iFold]['valid_labels'] = self.pipeline_sources([trials[i] for i in valid_index], [labels[i] for i in valid_index], eeg, train_flg=False)
             iFold += 1
@@ -147,7 +151,7 @@ class MLModel:
         # epochs = mne.preprocessing.compute_current_source_density(epochs, n_legendre_terms=20)  # laplacian works badly. Needed for features other than CSP
         if self.projParams['MiParams']['clean_epochs_ar_flg']:
             if fit_ar_flg:
-                self.ar = AutoReject(cv=20, thresh_method='bayesian_optimization', random_state=19, verbose=False)
+                self.ar = AutoReject(cv=5, thresh_method='bayesian_optimization', random_state=19, verbose=False)
                 self.ar.fit(epochs)
             reject_log = self.ar.get_reject_log(epochs)
             #reject_log.plot_epochs(epochs,scalings = dict(eeg=3e1))
@@ -173,48 +177,54 @@ class MLModel:
     def calc_features(self, epoched_data, eeg: EEG):
 
         #band/multiband power
-        # trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
+        if self.projParams['MiParams']['feature'] == 'BandPower':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
 
         #entropy/fractal
-        trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd'])  # app_entropy samp_entropy  higuchi_fd  katz_fd
-        # #Renyi Entropy?
-        # from entropy import sample_entropy, app_entropy, perm_entropy, katz_fd, higuchi_fd, detrended_fluctuation, lziv_complexity
-        # from scipy import stats, signal
-        # from statistics import median
-        # trials_features_new = np.empty(shape=(epoched_data.shape[0], epoched_data.shape[1]))
-        # for iTrial in range(epoched_data.shape[0]):
-        #     for iChan in range(epoched_data.shape[1]):
-        #         # trials_features_new[iTrial,iChan] = perm_entropy(epoched_data[iTrial, iChan, :], normalize=True)
-        #         # trials_features_new[iTrial, iChan] = higuchi_fd(epoched_data[iTrial, iChan, :])  # higuchi_fd detrended_fluctuation #katz_fd app_entropy sample_entropy
-        #
-        #         data_proc = epoched_data[iTrial, iChan, :] #e2s Daniel
-        #         # data_proc= stats.zscore(epoched_data[iTrial, iChan, :]) # e2s Tomer
-        #         # data_proc = np.abs(signal.hilbert(epoched_data[iTrial, iChan, :])) #e2s2 Tomer
-        #         data_thresholded = data_proc > median(data_proc)
-        #         # data_thresholded = np.ediff1d(epoched_data[iTrial, iChan, :], to_begin=-1) >= 0  # https://www.hindawi.com/journals/mpe/2018/8692146/
-        #         trials_features_new[iTrial,iChan] = lziv_complexity(data_thresholded, normalize=True)
+        elif self.projParams['MiParams']['feature'] == 'Entropy':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd'])  # app_entropy samp_entropy  higuchi_fd  katz_fd
+            # #Renyi Entropy?
+            # from entropy import sample_entropy, app_entropy, perm_entropy, katz_fd, higuchi_fd, detrended_fluctuation, lziv_complexity
+            # from scipy import stats, signal
+            # from statistics import median
+            # trials_features_new = np.empty(shape=(epoched_data.shape[0], epoched_data.shape[1]))
+            # for iTrial in range(epoched_data.shape[0]):
+            #     for iChan in range(epoched_data.shape[1]):
+            #         # trials_features_new[iTrial,iChan] = perm_entropy(epoched_data[iTrial, iChan, :], normalize=True)
+            #         # trials_features_new[iTrial, iChan] = higuchi_fd(epoched_data[iTrial, iChan, :])  # higuchi_fd detrended_fluctuation #katz_fd app_entropy sample_entropy
+            #
+            #         data_proc = epoched_data[iTrial, iChan, :] #e2s Daniel
+            #         # data_proc= stats.zscore(epoched_data[iTrial, iChan, :]) # e2s Tomer
+            #         # data_proc = np.abs(signal.hilbert(epoched_data[iTrial, iChan, :])) #e2s2 Tomer
+            #         data_thresholded = data_proc > median(data_proc)
+            #         # data_thresholded = np.ediff1d(epoched_data[iTrial, iChan, :], to_begin=-1) >= 0  # https://www.hindawi.com/journals/mpe/2018/8692146/
+            #         trials_features_new[iTrial,iChan] = lziv_complexity(data_thresholded, normalize=True)
 
         # #AR
-        # from statsmodels.tsa.ar_model import AutoReg, ar_select_order
-        # nARCoef = 4
-        # trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
-        # for iTrial in range(epoched_data.shape[0]):
-        #     for iChan in range(epoched_data.shape[1]):
-        #         AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
-        #         AutoRegRes = AutoRegModel.fit()
-        #         trials_features_new[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
+        # elif self.projParams['MiParams']['feature'] == 'AR':
+        #     from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+        #     nARCoef = 4
+        #     trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
+        #     for iTrial in range(epoched_data.shape[0]):
+        #         for iChan in range(epoched_data.shape[1]):
+        #             AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
+        #             AutoRegRes = AutoRegModel.fit()
+        #             trials_features_new[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
 
         # #MVAR
-        # from statsmodels.tsa.vector_ar.var_model import VAR
-        # nARCoef = 4
-        # trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
-        # for iTrial in range(epoched_data.shape[0]):
-        #     VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
-        #     VarRes = VarModel.fit(nARCoef)
-        #     trials_features_new[iTrial,:] = VarRes.params.flatten()
+        # elif self.projParams['MiParams']['feature'] == 'MVAR':
+        #     from statsmodels.tsa.vector_ar.var_model import VAR
+        #     nARCoef = 4
+        #     trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
+        #     for iTrial in range(epoched_data.shape[0]):
+        #         VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
+        #         VarRes = VarModel.fit(nARCoef)
+        #         trials_features_new[iTrial,:] = VarRes.params.flatten()
 
         # #EMD IMF
         # #https://emd.readthedocs.io/en/stable/   https://pypi.org/project/EMD-signal/
+        # elif self.projParams['MiParams']['feature'] == 'EMD_IMF':
+
 
         # trials_features = np.append(trials_features, trials_features_new, axis=1)
 

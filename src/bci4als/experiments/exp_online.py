@@ -39,7 +39,7 @@ class ExpOnline(OfflineExperiment):
                 feedback_stim = visual.ImageStim(win, image=self.images_feedback_path['correct'], pos=[0, -50], size=[630,360])
                 print(msg)
             else:
-                msg = 'Wrong!  Predicted label is: {}'.format(pred_label[0])
+                msg = 'Wrong!  Predicted label is: ' + self.enum_image[pred_label[0]]
                 print(msg)
                 feedback_stim = visual.ImageStim(win, image=self.images_feedback_path['wrong'], pos=[0, -50], size=[630,360])
         else:
