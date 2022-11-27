@@ -167,9 +167,17 @@ class MLModel:
         if fit_flg:
             # if self.projParams['MiParams']['decomposition'] == 'CSP': # CSP ICA PCA None
             self.decomposition = decoding.CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
-            # self.decomposition.plot_patterns(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
-            # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
             return self.decomposition.fit_transform(epochs.get_data(), labels)
+            # f = self.decomposition.plot_patterns(epochs.info, ch_type='eeg', sensors=False, show_names=False)
+            # f.axes[0].set_title('CSP1: Left hand', fontsize=18)
+            # f.axes[1].set_title('CSP2: Right hand', fontsize=18)
+            # f.axes[2].set_title('CSP3: Left hand', fontsize=18)
+            # f.axes[3].set_title('CSP4: Right hand', fontsize=18)
+            # f.axes[4].set_title('[AU]', fontsize=15)
+            # f.suptitle("MI Common Spatial Patterns", fontsize=40)
+            # f.set_size_inches(13, 6)
+            # f.savefig('MIcsp.png')
+            # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
         else:
             return self.decomposition.transform(epochs.get_data())
 
