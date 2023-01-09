@@ -111,6 +111,24 @@ class MLModel:
         self.acc['valid_av'] = np.mean(valid_acc_list)
         self.acc['valid_std'] = np.std(valid_acc_list)
         print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}'.format(self.acc['train_av'], self.acc['train_std'], self.acc['valid_av'], self.acc['valid_std']))
+
+        # #confusion matrix
+        # valid_labels = []
+        # pred_labels = []
+        # for iFold in range(self.projParams['MiParams']['nFold']):
+        #     valid_labels += Sources_t[iFold]['valid_labels']
+        #     pred_labels += Sources_t[iFold]['valid_pred_labels']
+        # cm_val = metrics.confusion_matrix(Sources_t[0]['valid_labels'], Sources_t[0]['valid_pred_labels'])
+        # cm_val = cm_val/np.expand_dims(np.sum(cm_val, axis=1), axis=-1) #normalize
+        # disp = metrics.ConfusionMatrixDisplay(confusion_matrix=cm_val, display_labels=['left', 'right'])
+        # disp.plot()
+        # disp.figure_.axes[0].set_title('Augmented Small Set Accuracy', pad=20, fontsize=40)
+        # disp.figure_.set_size_inches(13, 10)
+        # plt.show(block=False)
+        # plt.rcParams.update({'axes.labelsize': 32})
+        # plt.rcParams.update({'font.size': 28})
+        # plt.savefig('confusion_2a_augment.png')
+
         #full training
         full_acc, Sources_t[-1]['train_pred_labels'] = self.class_pipeline(Sources_t[-1]['train_source_data'], Sources_t[-1]['train_labels'], Sources_t[-1]['aug_source_data'], Sources_t[-1]['aug_labels'], eeg, train_flg=True)
         print('FULL TRAIN ACCURACY:   train {0:0.3f}'.format(full_acc))
