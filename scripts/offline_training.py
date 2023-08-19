@@ -31,6 +31,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
         in_fn_list = []
         acc_lists = {'train_acc':[], 'train_acc_std':[], 'valid_acc':[], 'valid_acc_std':[], 'test_acc':[]}
         in_dir = filedialog.askdirectory(title='Select trials folder', initialdir=projParams['FilesParams']['datasetsFp'])
+        # in_dir = projParams['FilesParams']['datasetsFp']+"\\2a"
 
         if sessType == SessionType.OfflineTrainCspMI:
             in_fn = "\\"+projParams['FilesParams']['trainDataFn']
@@ -70,6 +71,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
                     trials_mat['Sources_t'][iFold]['aug_labels'] = trials_mat['Sources_t'][iFold]['aug_labels'].tolist()
                     trials_mat['Sources_t'][iFold]['valid_labels'] = trials_mat['Sources_t'][iFold]['valid_labels'].tolist()
                 model.train_and_validate(trials_mat['Sources_t'], eeg)
+                model.name = projParams['MiParams']['input_prefix']+model.name
                 # model.train_and_validate(augmented_source_data, augSourceData['augmented_labels'], [], [], valid_source_data, augSourceData['valid_labels'], eeg) # accuracy of augmented data only
                 with open(session_directory+"\\"+model.name+".pkl", 'wb') as file: #save model
                     pickle.dump(model, file)
@@ -93,7 +95,7 @@ def offline_experiment(eeg, sessType: SessionType, train_trials_percent=100):
             print(os.path.dirname(in_fn_list[i]) + ' :    train {0:0.2f}      validation {1:0.2f}      test {2:0.2f}'.format(acc_lists['train_acc'][i], acc_lists['valid_acc'][i], acc_lists['test_acc'][i]))
         print('AVERAGE ACCURACY:   train {0:0.3f}+-{1:0.3f}, validation {2:0.3f}+-{3:0.3f}, test {4:0.3f}+-{5:0.3f}'.format(np.mean(acc_lists['train_acc']), np.std(acc_lists['train_acc']), np.mean(acc_lists['valid_acc']), np.std(acc_lists['valid_acc']), np.mean(acc_lists['test_acc']), np.std(acc_lists['test_acc'])))
 
-        with open(projParams['FilesParams']['classResults'],'w') as f:
+        with open(in_dir+"\\"+projParams['FilesParams']['classResults'],'w') as f:
             writer = csv.writer(f,lineterminator='\r')
             for i in range(len(in_fn_list)):
                 writer.writerow([acc_lists['train_acc'][i], acc_lists['valid_acc'][i], acc_lists['test_acc'][i], acc_lists['train_acc_std'][i], acc_lists['valid_acc_std'][i]])

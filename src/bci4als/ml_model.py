@@ -3,7 +3,7 @@ from nptyping import NDArray
 import pandas as pd
 import numpy as np
 import mne
-from mne import channels, decoding
+from mne import channels, decoding, preprocessing
 from mne_features.feature_extraction import extract_features
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -182,33 +182,55 @@ class MLModel:
 
 
     def decompose(self, epochs, labels=None, fit_flg=False):
-        if fit_flg:
-            # if self.projParams['MiParams']['decomposition'] == 'CSP': # CSP ICA PCA None
-            self.decomposition = decoding.CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
-            return self.decomposition.fit_transform(epochs.get_data(), labels)
-            # f = self.decomposition.plot_patterns(epochs.info, ch_type='eeg', sensors=False, show_names=False)
-            # f.axes[0].set_title('CSP1: Left hand', fontsize=18)
-            # f.axes[1].set_title('CSP2: Right hand', fontsize=18)
-            # f.axes[2].set_title('CSP3: Left hand', fontsize=18)
-            # f.axes[3].set_title('CSP4: Right hand', fontsize=18)
-            # f.axes[4].set_title('[AU]', fontsize=15)
-            # f.suptitle("MI Common Spatial Patterns", fontsize=40)
-            # f.set_size_inches(13, 6)
-            # f.savefig('MIcsp.png')
-            # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
-        else:
+        if self.projParams['MiParams']['decomposition'] == 'CSP':
+            if fit_flg:
+                self.decomposition = decoding.CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
+                self.decomposition.fit(epochs.get_data(), labels)
+                # f = self.decomposition.plot_patterns(epochs.info, ch_type='eeg', sensors=False, show_names=False)
+                # f.axes[0].set_title('CSP1: Left hand', fontsize=18)
+                # f.axes[1].set_title('CSP2: Right hand', fontsize=18)
+                # f.axes[2].set_title('CSP3: Left hand', fontsize=18)
+                # f.axes[3].set_title('CSP4: Right hand', fontsize=18)
+                # f.axes[4].set_title('[AU]', fontsize=15)
+                # f.suptitle("MI Common Spatial Patterns", fontsize=40)
+                # f.set_size_inches(13, 6)
+                # f.savefig('MIcsp.png')
+                # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
             return self.decomposition.transform(epochs.get_data())
+        elif self.projParams['MiParams']['decomposition'] == 'ICA':
+            if fit_flg:
+                self.decomposition = preprocessing.ICA(n_components=0.99, method='fastica')
+                self.decomposition.fit(epochs)
+                # self.ica_eog_idx, scores = self.decomposition.find_bads_eog(epochs, reject_by_annotation=False)
+                # self.ica_ecg_idx, scores = self.decomposition.find_bads_ecg(epochs, reject_by_annotation=False)
+                # self.ica_muscle_idx, scores = self.decomposition.find_bads_muscle(epochs, reject_by_annotation=False)
+            # epochs = self.decomposition.apply(epochs, exclude=self.ica_muscle_idx+self.ica_ecg_idx+self.ica_eog_idx)
+            return self.decomposition.get_sources(epochs).get_data()
+        elif self.projParams['MiParams']['decomposition'] == None:
+            return epochs.get_data()
 
 
     def calc_features(self, epoched_data, eeg: EEG):
 
+        #mixed
+        if self.projParams['MiParams']['feature'] == 'mixed':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['rms', 'line_length', 'svd_fisher_info']) # hjorth_mobility   wavelet_coef_energy
         #band/multiband power
-        if self.projParams['MiParams']['feature'] == 'BandPower':
+        elif self.projParams['MiParams']['feature'] == 'BandPower':
             trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands'], funcs_params={'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True})
-
-        #entropy/fractal
+        #RMS
+        elif self.projParams['MiParams']['feature'] == 'RMS':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['rms']) # ptp_amp
+        #spectral features combination
+        elif self.projParams['MiParams']['feature'] == 'Spectral':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['pow_freq_bands', 'rms', 'spect_entropy', 'hjorth_mobility_spect'], funcs_params={
+                'pow_freq_bands__freq_bands': self.projParams['MiParams']['power_bands'], 'pow_freq_bands__log': True, 'hjorth_mobility_spect__normalize': True})
+        #Higuchi
+        elif self.projParams['MiParams']['feature'] == 'Higuchi':
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd'])
+        #entropy/fractal combination
         elif self.projParams['MiParams']['feature'] == 'Entropy':
-            trials_features = extract_features(epoched_data, eeg.sfreq, ['higuchi_fd'])  # app_entropy samp_entropy  higuchi_fd  katz_fd
+            trials_features = extract_features(epoched_data, eeg.sfreq, ['line_length', 'svd_fisher_info']) # app_entropy samp_entropy  higuchi_fd  katz_fd
             # #Renyi Entropy?
             # from entropy import sample_entropy, app_entropy, perm_entropy, katz_fd, higuchi_fd, detrended_fluctuation, lziv_complexity
             # from scipy import stats, signal
@@ -225,28 +247,25 @@ class MLModel:
             #         data_thresholded = data_proc > median(data_proc)
             #         # data_thresholded = np.ediff1d(epoched_data[iTrial, iChan, :], to_begin=-1) >= 0  # https://www.hindawi.com/journals/mpe/2018/8692146/
             #         trials_features_new[iTrial,iChan] = lziv_complexity(data_thresholded, normalize=True)
-
-        # #AR
-        # elif self.projParams['MiParams']['feature'] == 'AR':
-        #     from statsmodels.tsa.ar_model import AutoReg, ar_select_order
-        #     nARCoef = 4
-        #     trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
-        #     for iTrial in range(epoched_data.shape[0]):
-        #         for iChan in range(epoched_data.shape[1]):
-        #             AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
-        #             AutoRegRes = AutoRegModel.fit()
-        #             trials_features_new[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
-
-        # #MVAR
-        # elif self.projParams['MiParams']['feature'] == 'MVAR':
-        #     from statsmodels.tsa.vector_ar.var_model import VAR
-        #     nARCoef = 4
-        #     trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
-        #     for iTrial in range(epoched_data.shape[0]):
-        #         VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
-        #         VarRes = VarModel.fit(nARCoef)
-        #         trials_features_new[iTrial,:] = VarRes.params.flatten()
-
+        #AR
+        elif self.projParams['MiParams']['feature'] == 'AR':
+            from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+            nARCoef = 4
+            trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*nARCoef))
+            for iTrial in range(epoched_data.shape[0]):
+                for iChan in range(epoched_data.shape[1]):
+                    AutoRegModel = AutoReg(epoched_data[iTrial, iChan, :], nARCoef-1) # AutoReg ar_select_order
+                    AutoRegRes = AutoRegModel.fit()
+                    trials_features_new[iTrial, iChan*nARCoef:(iChan+1)*nARCoef] = AutoRegRes.params
+        #MVAR
+        elif self.projParams['MiParams']['feature'] == 'MVAR':
+            from statsmodels.tsa.vector_ar.var_model import VAR
+            nARCoef = 4
+            trials_features_new = np.empty(shape=(epoched_data.shape[0],epoched_data.shape[1]*(epoched_data.shape[1]*nARCoef+1)))
+            for iTrial in range(epoched_data.shape[0]):
+                VarModel = VAR(np.transpose(epoched_data[iTrial, :, :]))
+                VarRes = VarModel.fit(nARCoef)
+                trials_features_new[iTrial,:] = VarRes.params.flatten()
         # #EMD IMF
         # #https://emd.readthedocs.io/en/stable/   https://pypi.org/project/EMD-signal/
         # elif self.projParams['MiParams']['feature'] == 'EMD_IMF':
