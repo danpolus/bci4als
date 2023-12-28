@@ -186,13 +186,13 @@ class MLModel:
             if fit_flg:
                 self.decomposition = decoding.CSP(n_components=self.projParams['MiParams']['n_csp_comp'], transform_into='csp_space')
                 self.decomposition.fit(epochs.get_data(), labels)
-                # f = self.decomposition.plot_patterns(epochs.info, ch_type='eeg', sensors=False, show_names=False)
+                # f = self.decomposition.plot_patterns(epochs.info, ch_type='eeg', sensors='k.', show_names=False, colorbar=False)
                 # f.axes[0].set_title('CSP1: Left hand', fontsize=18)
                 # f.axes[1].set_title('CSP2: Right hand', fontsize=18)
                 # f.axes[2].set_title('CSP3: Left hand', fontsize=18)
                 # f.axes[3].set_title('CSP4: Right hand', fontsize=18)
-                # f.axes[4].set_title('[AU]', fontsize=15)
-                # f.suptitle("MI Common Spatial Patterns", fontsize=40)
+                # #f.axes[4].set_title('[AU]', fontsize=15)
+                # #f.suptitle("MI Common Spatial Patterns", fontsize=40)
                 # f.set_size_inches(13, 6)
                 # f.savefig('MIcsp.png')
                 # self.decomposition.plot_filters(epochs.info, ch_type='eeg', show_names=True, units='Patterns (AU)', size=1.5)
@@ -284,9 +284,8 @@ class MLModel:
         augmented_labels = []
         for label in uniq_labels:
             feturs_mean = np.mean(trials_features[labels == label, :], axis=0)
-            feturs_std = np.std(trials_features[labels == label, :], axis=0)
-            trials_features_new = np.random.normal(size=(n_aug_trials, trials_features.shape[1]))
-            trials_features_new = trials_features_new * feturs_std * (1 + self.projParams['MiParams']['feature_noise_variation_factor']) + feturs_mean
+            feturs_cov = np.cov(trials_features[labels == label, :], rowvar=False)
+            trials_features_new = np.random.multivariate_normal(feturs_mean, feturs_cov*(1+self.projParams['MiParams']['feature_noise_variation_factor'])**2, size=n_aug_trials)
             augmented_features = np.append(augmented_features, trials_features_new, axis=0)
             augmented_labels = augmented_labels + (label * np.ones(n_aug_trials, dtype=int)).tolist()
         return augmented_features, augmented_labels
@@ -307,6 +306,17 @@ class MLModel:
                 aug_train_features = self.calc_features(aug_train_data, eeg)
             if aug_train_features.any():
                 train_features = np.append(train_features, aug_train_features, axis=0)
+                # plt.figure(figsize=(11, 11))
+                # ax = plt.subplot(111)
+                # pltscat = plt.scatter(train_features[:, 0], train_features[:, 1], marker='o', c=np.append(np.array(train_labels), np.array(aug_train_labels) + 2), cmap='Set1')
+                # ax.spines[['right', 'top']].set_visible(False)
+                # plt.xlabel('CSP1', fontsize=20)
+                # plt.ylabel('CSP2', fontsize=20)
+                # plt.xticks(fontsize=16)
+                # plt.yticks(fontsize=16)
+                # legend_handles,_ = pltscat.legend_elements()
+                # ax.legend(handles=legend_handles, labels=['Left', 'Right', 'Augmented Left', 'Augmented Right'], loc='best', fontsize=20)
+                # plt.show(block=True)
 
             #fit model
             # if self.projParams['MiParams']['classifier'] == 'LDA': # LDA SVM CNN
